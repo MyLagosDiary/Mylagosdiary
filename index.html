@@ -98,14 +98,10 @@
       width: 100%;
       border-radius: 99px;
       transition: width 0.3s ease;
-    }
-
-    #energyBar > div,
-    #energyBar {
       background: #7ed957;
     }
 
-    #hungerBar {
+    #hungerBar > div {
       background: #ffb703;
     }
 
@@ -124,6 +120,22 @@
       max-width: 86%;
       text-align: center;
       backdrop-filter: blur(6px);
+    }
+
+    #dbg {
+      position: fixed;
+      left: 10px;
+      bottom: max(84px, calc(env(safe-area-inset-bottom) + 76px));
+      color: #7CFC00;
+      background: rgba(0, 0, 0, 0.55);
+      font-size: 10px;
+      line-height: 1.35;
+      padding: 6px 8px;
+      border-radius: 8px;
+      z-index: 25;
+      max-width: 70%;
+      pointer-events: none;
+      font-family: monospace;
     }
 
     .iconBtn {
@@ -282,6 +294,8 @@
     Tap objects for actions • Tap floor to move • Drag rotate • Pinch zoom
   </div>
 
+  <div id="dbg">BOOTING...</div>
+
   <button id="diaryBtn" class="iconBtn">📔</button>
 
   <div id="actionSheet">
@@ -320,6 +334,7 @@
     const loadingEl = document.getElementById("loading");
     const hintEl = document.getElementById("hint");
     const fadeEl = document.getElementById("fade");
+    const dbgEl = document.getElementById("dbg");
     const diaryPanel = document.getElementById("diaryPanel");
     const diaryContent = document.getElementById("diaryContent");
     const actionSheet = document.getElementById("actionSheet");
@@ -345,6 +360,8 @@
 
       energyBar.style.width = Math.round(state.energy) + "%";
       hungerBar.style.width = Math.round(state.hunger) + "%";
+      energyBar.style.background = state.energy < 25 ? "#ff5252" : "#7ed957";
+      hungerBar.style.background = state.hunger < 25 ? "#ff5252" : "#ffb703";
       moneyEl.textContent = state.money.toLocaleString();
       dayEl.textContent = state.day;
       clockEl.textContent = clockString();
@@ -369,16 +386,6 @@
 
     function hideLoading() {
       loadingEl.style.display = "none";
-    }
-
-    let hintTimer = null;
-    function showHint(text, seconds) {
-      hintEl.textContent = text;
-      hintEl.style.display = "block";
-      clearTimeout(hintTimer);
-      hintTimer = setTimeout(() => {
-        hintEl.style.display = "none";
-      }, seconds * 1000);
     }
 
     setTimeout(() => {
@@ -647,7 +654,8 @@
         onDone: opts.onDone || null
       };
 
-      if (opts.blend) playAction(opts.blend);
+      if (opts.oneShot) playOneShot(opts.oneShot);
+      else if (opts.blend) playAction(opts.blend);
     }
 
     function standUpThen(callback) {
@@ -661,8 +669,9 @@
       startTransition({
         toPos: new THREE.Vector3(player.position.x, 0, player.position.z),
         toRot: { x: 0, y: player.rotation.y, z: 0 },
-        dur: 0.35,
-        blend: "idle",
+        dur: 0.45,
+        oneShot: actions.stand ? "stand" : null,
+        blend: actions.stand ? null : "idle",
         onDone: callback
       });
     }
@@ -895,13 +904,13 @@
     }
 
     const loader = new GLTFLoader();
-    const modelUrl = "https://threejs.org/examples/models/gltf/Xbot.glb";
+    const modelUrl = "https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb";
 
     loader.load(
       modelUrl,
       (gltf) => {
         const model = gltf.scene;
-        model.scale.setScalar(1.02);
+        model.scale.setScalar(1.0);
         model.traverse((child) => {
           if (child.isMesh) {
             child.castShadow = true;
@@ -913,7 +922,7 @@
         mixer = new THREE.AnimationMixer(model);
         const clips = gltf.animations || [];
 
-        showHint("ANIMS: " + clips.map((c) => c.name).join(", "), 20);
+        dbgEl.textContent = "MODEL OK • ANIMS: " + clips.map((c) => c.name).join(", ");
 
         function findClip(names) {
           for (const name of names) {
@@ -923,15 +932,21 @@
           return null;
         }
 
-        const idleClip = findClip(["idle", "breath"]) || clips[0] || null;
-        const walkClip = findClip(["walk", "walking"]) || clips[1] || idleClip;
-        const sitClip = findClip(["sitting", "sit"]) || null;
-        const thumbsClip = findClip(["thumbs", "thumb"]) || null;
+        const idleClip = findClip(["idle"]) || clips[0] || null;
+        const walkClip = findClip(["walk"]) || clips[1] || idleClip;
+        const sitClip = findClip(["sit"]) || null;
+        const standClip = findClip(["standing", "stand"]) || null;
+        const thumbsClip = findClip(["thumbs"]) || null;
+        const danceClip = findClip(["dance"]) || null;
+        const waveClip = findClip(["wave"]) || null;
 
         if (idleClip) actions.idle = mixer.clipAction(idleClip);
         if (walkClip) actions.walk = mixer.clipAction(walkClip);
         if (sitClip) actions.sit = mixer.clipAction(sitClip);
+        if (standClip) actions.stand = mixer.clipAction(standClip);
         if (thumbsClip) actions.thumbs = mixer.clipAction(thumbsClip);
+        if (danceClip) actions.dance = mixer.clipAction(danceClip);
+        if (waveClip) actions.wave = mixer.clipAction(waveClip);
 
         mixer.addEventListener("finished", () => {
           if (posture === "sit") {
@@ -947,6 +962,7 @@
       undefined,
       (error) => {
         console.error("Model load error:", error);
+        dbgEl.textContent = "MODEL FAILED • placeholder";
         createPlaceholderCharacter();
         showToast("Character model failed. Using placeholder.");
       }
