@@ -315,7 +315,7 @@
     import * as THREE from "three";
     import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-    const BUILD_TAG = "B17";
+    const BUILD_TAG = "B18";
 
     const state = {
       money: 1000,
@@ -477,6 +477,7 @@
       const a = mixer.clipAction(clip);
       a.reset();
       a.setLoop(THREE.LoopRepeat, Infinity);
+      a.setEffectiveTimeScale(1);
       a.setEffectiveWeight(1);
       a.fadeIn(0.2);
       a.play();
@@ -770,9 +771,12 @@
     makeWall(-5, 0, Math.PI / 2);
     makeWall(5, 0, -Math.PI / 2);
 
+    const windowGroup = new THREE.Group();
+    scene.add(windowGroup);
+
     const windowView = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.5), windowMat);
     windowView.position.set(-0.6, 1.7, -4.98);
-    scene.add(windowView);
+    windowGroup.add(windowView);
 
     function frameBox(w, h, d, x, y, z) {
       const mesh = new THREE.Mesh(
@@ -780,7 +784,7 @@
         new THREE.MeshStandardMaterial({ color: "#5b4632", roughness: 0.8 })
       );
       mesh.position.set(x, y, z);
-      scene.add(mesh);
+      windowGroup.add(mesh);
       return mesh;
     }
 
@@ -904,6 +908,25 @@
       activeAction = next;
     }
 
+    function playSit() {
+      const next = actions.sit;
+      if (!next) {
+        playAction("idle");
+        return;
+      }
+
+      next.reset();
+      next.setLoop(THREE.LoopOnce, 1);
+      next.clampWhenFinished = true;
+      next.setEffectiveTimeScale(1.4);
+      next.setEffectiveWeight(1);
+      next.fadeIn(0.2);
+      next.play();
+
+      if (activeAction) activeAction.fadeOut(0.2);
+      activeAction = next;
+    }
+
     function startTransition(opts) {
       transition = {
         t: 0,
@@ -915,7 +938,8 @@
         onDone: opts.onDone || null
       };
 
-      if (opts.oneShot) playOneShot(opts.oneShot);
+      if (opts.sitDown) playSit();
+      else if (opts.oneShot) playOneShot(opts.oneShot);
       else if (opts.blend) playAction(opts.blend);
     }
 
@@ -1009,7 +1033,7 @@
           toPos: spots.chairSit,
           toRot: { x: 0, y: Math.PI, z: 0 },
           dur: 0.25,
-          blend: actions.sit ? "sit" : "idle",
+          sitDown: true,
           onDone: () => {
             logEvent("Sat down small to rest mind.");
             showToast("You sit down small.");
@@ -1222,7 +1246,7 @@
 
       const idleClip = findClip(["idle"]) || clips[0] || null;
       const walkClip = findClip(["walk"]) || findClip(["run"]) || clips[1] || idleClip;
-      const sitClip = findClip(["sit"]) || null;
+      const sitClip = findClip(["sit"]) || findClip(["armatureaction"]) || null;
       const standClip = findClip(["standing", "stand up", "stand"]) || null;
       const thumbsClip = findClip(["thumbs"]) || null;
       const danceClip = findClip(["dance"]) || null;
@@ -1239,9 +1263,7 @@
       if (workClip) actions.work = mixer.clipAction(workClip);
 
       mixer.addEventListener("finished", () => {
-        if (posture === "sit") {
-          playAction("sit");
-        } else if (posture === "stand" && !isMoving && !transition) {
+        if (posture === "stand" && !isMoving && !transition) {
           playAction("idle");
         }
       });
@@ -1450,6 +1472,8 @@
         player.position.z + Math.cos(yaw) * distance * cosPitch
       );
       camera.lookAt(player.position.x, player.position.y + 1.0, player.position.z);
+
+      windowGroup.visible = camera.position.z > -4.8;
     }
 
     const clock = new THREE.Clock();
