@@ -78,13 +78,40 @@
       padding: 10px 12px;
       backdrop-filter: blur(8px);
       font-size: 14px;
-      line-height: 1.45;
-      min-width: 115px;
+      line-height: 1.6;
+      min-width: 120px;
+    }
+
+    .bar {
+      display: inline-block;
+      width: 88px;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.25);
+      border-radius: 99px;
+      overflow: hidden;
+      vertical-align: middle;
+      margin-left: 4px;
+    }
+
+    .bar > div {
+      height: 100%;
+      width: 100%;
+      border-radius: 99px;
+      transition: width 0.3s ease;
+    }
+
+    #energyBar > div,
+    #energyBar {
+      background: #7ed957;
+    }
+
+    #hungerBar {
+      background: #ffb703;
     }
 
     .hint {
       position: fixed;
-      top: max(92px, calc(env(safe-area-inset-top) + 84px));
+      top: max(96px, calc(env(safe-area-inset-top) + 88px));
       left: 50%;
       transform: translateX(-50%);
       color: white;
@@ -99,43 +126,78 @@
       backdrop-filter: blur(6px);
     }
 
-    .actions {
+    .iconBtn {
       position: fixed;
-      left: 0;
-      right: 0;
-      bottom: max(18px, env(safe-area-inset-bottom));
-      display: flex;
-      justify-content: center;
-      gap: 8px;
-      z-index: 30;
-      padding: 0 10px;
-      flex-wrap: wrap;
+      right: 14px;
+      bottom: max(16px, env(safe-area-inset-bottom));
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      border: 0;
+      font-size: 24px;
+      background: rgba(0, 0, 0, 0.45);
+      color: white;
+      z-index: 35;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
     }
 
-    button {
-      border: 0;
-      border-radius: 999px;
-      padding: 12px 14px;
-      font-size: 14px;
+    .iconBtn:active {
+      transform: scale(0.96);
+    }
+
+    #actionSheet {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: max(14px, env(safe-area-inset-bottom));
+      background: rgba(18, 18, 24, 0.94);
+      border-radius: 22px;
+      padding: 14px;
+      z-index: 40;
+      transform: translateY(130%);
+      transition: transform 0.28s ease;
+      backdrop-filter: blur(10px);
+    }
+
+    #actionSheet.open {
+      transform: translateY(0);
+    }
+
+    #sheetTitle {
+      color: white;
       font-weight: 800;
+      font-size: 15px;
+      margin: 0 4px 10px;
+    }
+
+    .sheetBtn {
+      display: block;
+      width: 100%;
+      margin: 6px 0;
+      border: 0;
+      border-radius: 16px;
+      padding: 13px 14px;
+      font-size: 15px;
+      font-weight: 700;
       color: white;
       background: #2e7d32;
-      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+      text-align: left;
     }
 
-    button:active {
-      transform: scale(0.98);
+    .sheetBtn:active {
+      transform: scale(0.99);
     }
 
-    button.grey {
-      background: #6d5a3f;
+    .sheetBtn.cancel {
+      background: #4a4a52;
+      text-align: center;
     }
 
     #toast {
       position: fixed;
       left: 50%;
       transform: translateX(-50%);
-      bottom: max(96px, calc(env(safe-area-inset-bottom) + 88px));
+      bottom: max(110px, calc(env(safe-area-inset-bottom) + 100px));
       background: rgba(0, 0, 0, 0.75);
       color: white;
       padding: 10px 14px;
@@ -180,8 +242,12 @@
       top: 0;
       float: right;
       background: #6d5a3f;
+      color: white;
+      border: 0;
+      border-radius: 999px;
       padding: 8px 12px;
       font-size: 12px;
+      font-weight: 700;
     }
   </style>
 
@@ -202,8 +268,8 @@
   <div class="hud">
     <div class="panel">
       <div><b>MyLagosDiary</b></div>
-      <div>Energy: <span id="energy">100</span></div>
-      <div>Hunger: <span id="hunger">100</span></div>
+      <div>⚡<span class="bar" id="energyBar"><div></div></span></div>
+      <div>🍲<span class="bar" id="hungerBar"><div></div></span></div>
     </div>
 
     <div class="panel">
@@ -213,14 +279,14 @@
   </div>
 
   <div class="hint" id="hint">
-    Tap bed / chair / table • Tap floor to move • Drag rotate • Pinch zoom
+    Tap objects for actions • Tap floor to move • Drag rotate • Pinch zoom
   </div>
 
-  <div class="actions">
-    <button id="hustleBtn">Hustle ₦40</button>
-    <button id="eatBtn">Eat ₦350</button>
-    <button id="restBtn">Rest</button>
-    <button id="diaryBtn" class="grey">Diary</button>
+  <button id="diaryBtn" class="iconBtn">📔</button>
+
+  <div id="actionSheet">
+    <div id="sheetTitle"></div>
+    <div id="sheetBtns"></div>
   </div>
 
   <div id="toast"></div>
@@ -245,8 +311,8 @@
       todayEvents: ["Started the day with ₦1,000 for pocket."]
     };
 
-    const energyEl = document.getElementById("energy");
-    const hungerEl = document.getElementById("hunger");
+    const energyBar = document.querySelector("#energyBar > div");
+    const hungerBar = document.querySelector("#hungerBar > div");
     const moneyEl = document.getElementById("money");
     const clockEl = document.getElementById("clock");
     const dayEl = document.getElementById("day");
@@ -256,6 +322,9 @@
     const fadeEl = document.getElementById("fade");
     const diaryPanel = document.getElementById("diaryPanel");
     const diaryContent = document.getElementById("diaryContent");
+    const actionSheet = document.getElementById("actionSheet");
+    const sheetTitle = document.getElementById("sheetTitle");
+    const sheetBtns = document.getElementById("sheetBtns");
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -274,8 +343,8 @@
       state.energy = clamp(state.energy, 0, 100);
       state.hunger = clamp(state.hunger, 0, 100);
 
-      energyEl.textContent = Math.round(state.energy);
-      hungerEl.textContent = Math.round(state.hunger);
+      energyBar.style.width = Math.round(state.energy) + "%";
+      hungerBar.style.width = Math.round(state.hunger) + "%";
       moneyEl.textContent = state.money.toLocaleString();
       dayEl.textContent = state.day;
       clockEl.textContent = clockString();
@@ -318,47 +387,9 @@
 
     let sleeping = false;
 
-    document.getElementById("hustleBtn").addEventListener("click", () => {
-      if (sleeping) return;
-      if (state.energy < 10) { showToast("You no get energy"); return; }
-      if (state.hunger < 10) { showToast("You too hungry to hustle"); return; }
-
-      state.money += 40;
-      state.energy -= 10;
-      state.hunger -= 5;
-      addMinutes(10);
-      logEvent("Hustled hard and earned ₦40.");
-      updateHUD();
-      showToast("+₦40 from hustle");
-    });
-
-    document.getElementById("eatBtn").addEventListener("click", () => {
-      if (sleeping) return;
-      if (state.money < 350) { showToast("No money for buka"); return; }
-      if (state.hunger >= 100) { showToast("You don full"); return; }
-
-      state.money -= 350;
-      state.hunger += 35;
-      addMinutes(5);
-      logEvent("Chop buka food for ₦350.");
-      updateHUD();
-      showToast("You chop small");
-    });
-
-    document.getElementById("restBtn").addEventListener("click", () => {
-      if (sleeping) return;
-      if (state.energy >= 100) { showToast("Energy don full"); return; }
-
-      state.energy += 25;
-      state.hunger -= 8;
-      addMinutes(60);
-      logEvent("Rested small to catch breath.");
-      updateHUD();
-      showToast("You rest small");
-    });
-
     document.getElementById("diaryBtn").addEventListener("click", () => {
       if (sleeping) return;
+      closeSheet();
       renderDiary();
       diaryPanel.style.display = "block";
     });
@@ -368,17 +399,13 @@
     });
 
     function renderDiary() {
-      const closing = "";
       let html = "";
-
       html += `<div class="entry"><b>Today (Day ${state.day})</b><br>${state.todayEvents.join("<br>")}</div>`;
-
       const past = [...state.diary].reverse();
       for (const entry of past) {
         html += `<div class="entry">${entry}</div>`;
       }
-
-      diaryContent.innerHTML = html || closing;
+      diaryContent.innerHTML = html;
     }
 
     const closings = [
@@ -426,6 +453,7 @@
 
     const dayColor = new THREE.Color("#bfe9ff");
     const nightColor = new THREE.Color("#0b1026");
+    let lampShade = null;
 
     function updateDayNight() {
       const h = state.minutes / 60;
@@ -450,7 +478,6 @@
     const tapMeshes = [];
     const interactiveObjects = [];
     let foodMesh = null;
-    let lampShade = null;
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(80, 80),
@@ -534,6 +561,9 @@
     m = makeBox(0.55, 0.07, 0.55, "#7c4f2a", 1.8, 0.45, -0.7); m.userData.type = "chair"; interactiveObjects.push(m);
     m = makeBox(0.55, 0.65, 0.07, "#7c4f2a", 1.8, 0.82, -0.45); m.userData.type = "chair"; interactiveObjects.push(m);
 
+    m = makeBox(0.8, 0.5, 0.6, "#c98a4b", -4.0, 0.25, 1.8); m.userData.type = "basket"; interactiveObjects.push(m);
+    m = makeBox(0.6, 0.12, 0.45, "#8fbf6f", -4.0, 0.55, 1.8); m.userData.type = "basket"; interactiveObjects.push(m);
+
     makeCylinder(0.04, 0.04, 1.6, "#444444", -4.2, 0.8, -4.2);
     lampShade = new THREE.Mesh(
       new THREE.CylinderGeometry(0.22, 0.32, 0.35, 24),
@@ -561,7 +591,9 @@
       chairApproach: new THREE.Vector3(1.05, 0, 0.2),
       chairSit: new THREE.Vector3(1.8, 0, -0.7),
       tableApproach: new THREE.Vector3(0.95, 0, -1.8),
-      tableCenter: new THREE.Vector3(1.8, 0, -1.8)
+      tableCenter: new THREE.Vector3(1.8, 0, -1.8),
+      basketApproach: new THREE.Vector3(-2.9, 0, 1.8),
+      basketCenter: new THREE.Vector3(-4.0, 0, 1.8)
     };
 
     let mixer = null;
@@ -685,6 +717,21 @@
             });
           }
         });
+      } else if (type === "nap") {
+        startTransition({
+          toPos: spots.bedApproach,
+          toRot: { x: 0, y: -Math.PI / 2, z: 0 },
+          dur: 0.35,
+          blend: "idle",
+          onDone: () => {
+            state.energy += 25;
+            state.hunger -= 8;
+            addMinutes(60);
+            logEvent("Napped small for bedside.");
+            showToast("You nap small. Body refresh.");
+            updateHUD();
+          }
+        });
       } else if (type === "chair") {
         posture = "sit";
 
@@ -724,6 +771,112 @@
             updateHUD();
           }
         });
+      } else if (type === "basket") {
+        const dirToBasket = spots.basketCenter.clone().sub(player.position);
+        const faceYaw = Math.atan2(dirToBasket.x, dirToBasket.z);
+
+        startTransition({
+          toPos: player.position.clone(),
+          toRot: { x: 0, y: faceYaw, z: 0 },
+          dur: 0.3,
+          blend: "idle",
+          onDone: () => {
+            if (state.energy < 10) {
+              showToast("You no get energy");
+              return;
+            }
+            if (state.hunger < 10) {
+              showToast("You too hungry to hustle");
+              return;
+            }
+
+            state.money += 40;
+            state.energy -= 10;
+            state.hunger -= 5;
+            addMinutes(10);
+            logEvent("Sorted catch for basket, earned ₦40.");
+            playOneShot("thumbs");
+            showToast("+₦40 from catch sorting");
+            updateHUD();
+          }
+        });
+      }
+    }
+
+    function sheetDefs(type) {
+      if (type === "bed") {
+        return {
+          title: "Bed",
+          items: [
+            { label: "😴 Sleep till morning", act: "sleep" },
+            { label: "💤 Nap (1 hour)", act: "nap" }
+          ]
+        };
+      }
+      if (type === "chair") {
+        if (posture === "sit") {
+          return { title: "Chair", items: [{ label: "🧍 Stand up", act: "standup" }] };
+        }
+        return { title: "Chair", items: [{ label: "🪑 Sit down", act: "sit" }] };
+      }
+      if (type === "table") {
+        return { title: "Table", items: [{ label: "🍲 Eat home food ₦350", act: "eat" }] };
+      }
+      if (type === "basket") {
+        return { title: "Work basket", items: [{ label: "🐟 Sort catch (+₦40)", act: "hustle" }] };
+      }
+      return null;
+    }
+
+    function openSheet(type) {
+      const def = sheetDefs(type);
+      if (!def) return;
+
+      sheetTitle.textContent = def.title;
+      sheetBtns.innerHTML = "";
+
+      for (const item of def.items) {
+        const btn = document.createElement("button");
+        btn.className = "sheetBtn";
+        btn.textContent = item.label;
+        btn.addEventListener("click", () => {
+          closeSheet();
+          chooseAction(item.act);
+        });
+        sheetBtns.appendChild(btn);
+      }
+
+      const cancel = document.createElement("button");
+      cancel.className = "sheetBtn cancel";
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", closeSheet);
+      sheetBtns.appendChild(cancel);
+
+      actionSheet.classList.add("open");
+    }
+
+    function closeSheet() {
+      actionSheet.classList.remove("open");
+    }
+
+    function chooseAction(act) {
+      if (act === "sleep") {
+        pendingAction = "bed";
+        setMoveTarget(spots.bedApproach);
+      } else if (act === "nap") {
+        pendingAction = "nap";
+        setMoveTarget(spots.bedApproach);
+      } else if (act === "sit") {
+        pendingAction = "chair";
+        setMoveTarget(spots.chairApproach);
+      } else if (act === "standup") {
+        standUpThen(() => {});
+      } else if (act === "eat") {
+        pendingAction = "table";
+        setMoveTarget(spots.tableApproach);
+      } else if (act === "hustle") {
+        pendingAction = "basket";
+        setMoveTarget(spots.basketApproach);
       }
     }
 
@@ -760,7 +913,7 @@
         mixer = new THREE.AnimationMixer(model);
         const clips = gltf.animations || [];
 
-        showHint("ANIMS: " + clips.map((c) => c.name).join(", "), 14);
+        showHint("ANIMS: " + clips.map((c) => c.name).join(", "), 20);
 
         function findClip(names) {
           for (const name of names) {
@@ -837,37 +990,15 @@
       const objHits = raycaster.intersectObjects(interactiveObjects, false);
       if (objHits.length > 0) {
         const type = objHits[0].object.userData.type;
-
-        if (type === "bed") {
-          pendingAction = "bed";
-          setMoveTarget(spots.bedApproach);
-          return;
-        }
-
-        if (type === "chair") {
-          if (posture === "sit") {
-            pendingAction = null;
-            standUpThen(() => {
-              setMoveTarget(spots.chairApproach);
-            });
-          } else {
-            pendingAction = "chair";
-            setMoveTarget(spots.chairApproach);
-          }
-          return;
-        }
-
-        if (type === "table") {
-          pendingAction = "table";
-          setMoveTarget(spots.tableApproach);
-          return;
-        }
+        openSheet(type);
+        return;
       }
 
       const floorHits = raycaster.intersectObjects(tapMeshes, false);
       if (floorHits.length > 0) {
-        const point = floorHits[0].point;
+        closeSheet();
         pendingAction = null;
+        const point = floorHits[0].point;
 
         if (posture !== "stand") {
           standUpThen(() => setMoveTarget(point));
