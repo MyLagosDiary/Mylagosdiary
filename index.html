@@ -134,7 +134,7 @@
       border-radius: 8px;
       z-index: 25;
       max-width: 70%;
-      pointer-events: none;
+      pointer-events: auto;
       font-family: monospace;
     }
 
@@ -436,9 +436,9 @@
 
     const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -452,10 +452,10 @@
     const sun = new THREE.DirectionalLight("#fff1d0", 2.4);
     sun.position.set(6, 10, 4);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
-    sun.shadow.camera.left = -14; sun.shadow.camera.right = 14;
-    sun.shadow.camera.top = 14; sun.shadow.camera.bottom = -14;
-    sun.shadow.camera.near = 1; sun.shadow.camera.far = 40;
+    sun.shadow.mapSize.set(512, 512);
+    sun.shadow.camera.left = -10; sun.shadow.camera.right = 10;
+    sun.shadow.camera.top = 10; sun.shadow.camera.bottom = -10;
+    sun.shadow.camera.near = 1; sun.shadow.camera.far = 30;
     scene.add(sun);
 
     const dayColor = new THREE.Color("#bfe9ff");
@@ -910,19 +910,35 @@
       modelUrl,
       (gltf) => {
         const model = gltf.scene;
-        model.scale.setScalar(1.0);
+        player.add(model);
+
+        model.updateWorldMatrix(true, true);
+        const box = new THREE.Box3().setFromObject(model);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+
+        let heightInfo = "H:?";
+        if (size.y > 0.001) {
+          const s = 1.7 / size.y;
+          model.scale.setScalar(s);
+          heightInfo = "H:" + size.y.toFixed(1) + "→1.7";
+        }
+
+        model.updateWorldMatrix(true, true);
+        const box2 = new THREE.Box3().setFromObject(model);
+        model.position.y -= box2.min.y;
+
         model.traverse((child) => {
           if (child.isMesh) {
             child.castShadow = true;
             child.receiveShadow = true;
           }
         });
-        player.add(model);
 
         mixer = new THREE.AnimationMixer(model);
         const clips = gltf.animations || [];
 
-        dbgEl.textContent = "MODEL OK • ANIMS: " + clips.map((c) => c.name).join(", ");
+        dbgEl.textContent = "MODEL OK • " + heightInfo + " • ANIMS: " + clips.map((c) => c.name).join(", ");
 
         function findClip(names) {
           for (const name of names) {
