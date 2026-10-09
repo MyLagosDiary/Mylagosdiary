@@ -487,10 +487,10 @@
     renderer.toneMappingExposure = 1.05;
     document.body.appendChild(renderer.domElement);
 
-    const hemi = new THREE.HemisphereLight("#ffffff", "#d8c9a3", 1.15);
+    const hemi = new THREE.HemisphereLight("#fff6e0", "#c9a06a", 1.15);
     scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight("#fff1d0", 2.4);
+    const sun = new THREE.DirectionalLight("#ffd9a0", 2.4);
     sun.position.set(6, 10, 4);
     sun.castShadow = true;
     sun.shadow.mapSize.set(512, 512);
@@ -502,6 +502,129 @@
     const dayColor = new THREE.Color("#bfe9ff");
     const nightColor = new THREE.Color("#0b1026");
     let lampShade = null;
+
+    function makeCanvas(w, h) {
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      return c;
+    }
+
+    function woodFloorTexture() {
+      const c = makeCanvas(256, 256);
+      const g = c.getContext("2d");
+
+      g.fillStyle = "#b98d5f";
+      g.fillRect(0, 0, 256, 256);
+
+      const plankH = 32;
+      for (let y = 0; y < 256; y += plankH) {
+        const shade = 158 + Math.floor(Math.random() * 34);
+        g.fillStyle = `rgb(${shade},${Math.floor(shade * 0.72)},${Math.floor(shade * 0.45)})`;
+        g.fillRect(0, y, 256, plankH - 2);
+
+        g.fillStyle = "rgba(60,35,18,0.55)";
+        g.fillRect(0, y + plankH - 2, 256, 2);
+
+        const sx = (y / plankH) % 2 === 0 ? 85 : 170;
+        g.fillRect(sx, y, 2, plankH - 2);
+      }
+
+      const t = new THREE.CanvasTexture(c);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(3, 3);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    }
+
+    function zincTexture() {
+      const c = makeCanvas(128, 128);
+      const g = c.getContext("2d");
+
+      g.fillStyle = "#cfd6d2";
+      g.fillRect(0, 0, 128, 128);
+
+      for (let x = 0; x < 128; x += 8) {
+        g.fillStyle = (x / 8) % 2 === 0 ? "rgba(255,255,255,0.25)" : "rgba(90,100,98,0.25)";
+        g.fillRect(x, 0, 4, 128);
+      }
+
+      g.fillStyle = "rgba(150,90,50,0.18)";
+      for (let i = 0; i < 14; i++) {
+        g.beginPath();
+        g.arc(Math.random() * 128, Math.random() * 128, 3 + Math.random() * 6, 0, Math.PI * 2);
+        g.fill();
+      }
+
+      const t = new THREE.CanvasTexture(c);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(4, 1.2);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    }
+
+    const TOWERS = [
+      [10, 18, 50], [34, 14, 60], [54, 20, 44], [80, 12, 64], [98, 16, 50],
+      [120, 14, 56], [140, 18, 42], [164, 12, 62], [182, 16, 48], [204, 14, 56], [224, 18, 44]
+    ];
+
+    function skylineTexture(night) {
+      const c = makeCanvas(256, 128);
+      const g = c.getContext("2d");
+
+      if (!night) {
+        const sky = g.createLinearGradient(0, 0, 0, 90);
+        sky.addColorStop(0, "#bfe9ff");
+        sky.addColorStop(1, "#e8f6ff");
+        g.fillStyle = sky;
+        g.fillRect(0, 0, 256, 90);
+
+        g.fillStyle = "#7fa8c9";
+        g.fillRect(0, 90, 256, 38);
+
+        g.fillStyle = "#9aa7b4";
+        for (const [x, w, h] of TOWERS) {
+          g.fillRect(x, 90 - h, w, h);
+        }
+      } else {
+        g.fillStyle = "#0b1026";
+        g.fillRect(0, 0, 256, 90);
+
+        g.fillStyle = "#06182b";
+        g.fillRect(0, 90, 256, 38);
+
+        g.fillStyle = "#101826";
+        for (const [x, w, h] of TOWERS) {
+          g.fillRect(x, 90 - h, w, h);
+        }
+
+        g.fillStyle = "#ffd166";
+        for (const [x, w, h] of TOWERS) {
+          for (let wy = 90 - h + 4; wy < 86; wy += 6) {
+            for (let wx = x + 2; wx < x + w - 2; wx += 4) {
+              if (((wx * 7 + wy * 13) % 9) < 4) {
+                g.fillRect(wx, wy, 2, 3);
+              }
+            }
+          }
+        }
+
+        g.fillStyle = "rgba(255,209,102,0.25)";
+        for (let i = 0; i < 40; i++) {
+          g.fillRect(Math.random() * 256, 92 + Math.random() * 34, 2, 2);
+        }
+      }
+
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    }
+
+    const skyDayTex = skylineTexture(false);
+    const skyNightTex = skylineTexture(true);
+
+    const windowMat = new THREE.MeshBasicMaterial({ map: skyDayTex });
+    windowMat.userData.night = false;
 
     function updateDayNight() {
       const h = state.minutes / 60;
@@ -521,6 +644,13 @@
       if (lampShade) {
         lampShade.material.emissiveIntensity = 0.35 + 1.4 * (1 - light);
       }
+
+      const wantNight = light < 0.4;
+      if (windowMat.userData.night !== wantNight) {
+        windowMat.map = wantNight ? skyNightTex : skyDayTex;
+        windowMat.userData.night = wantNight;
+        windowMat.needsUpdate = true;
+      }
     }
 
     const tapMeshes = [];
@@ -538,7 +668,7 @@
 
     const roomFloor = new THREE.Mesh(
       new THREE.PlaneGeometry(10, 10),
-      new THREE.MeshStandardMaterial({ color: "#d7b083", roughness: 0.9 })
+      new THREE.MeshStandardMaterial({ map: woodFloorTexture(), roughness: 0.9 })
     );
     roomFloor.rotation.x = -Math.PI / 2;
     roomFloor.position.y = 0.01;
@@ -570,10 +700,12 @@
     poleCap.position.set(3.2, 1.7, 2.8);
     scene.add(poleCap);
 
+    const zincTex = zincTexture();
+
     function makeWall(x, z, rotationY) {
       const wall = new THREE.Mesh(
         new THREE.PlaneGeometry(10, 3),
-        new THREE.MeshStandardMaterial({ color: "#f6efe3", roughness: 0.95, side: THREE.FrontSide })
+        new THREE.MeshStandardMaterial({ map: zincTex, roughness: 0.95, side: THREE.FrontSide })
       );
       wall.position.set(x, 1.5, z);
       wall.rotation.y = rotationY;
@@ -585,6 +717,27 @@
     makeWall(0, 5, Math.PI);
     makeWall(-5, 0, Math.PI / 2);
     makeWall(5, 0, -Math.PI / 2);
+
+    const windowView = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.5), windowMat);
+    windowView.position.set(-0.6, 1.7, -4.98);
+    scene.add(windowView);
+
+    function frameBox(w, h, d, x, y, z) {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(w, h, d),
+        new THREE.MeshStandardMaterial({ color: "#5b4632", roughness: 0.8 })
+      );
+      mesh.position.set(x, y, z);
+      scene.add(mesh);
+      return mesh;
+    }
+
+    frameBox(2.8, 0.08, 0.08, -0.6, 2.49, -4.95);
+    frameBox(2.8, 0.08, 0.08, -0.6, 0.91, -4.95);
+    frameBox(0.08, 1.66, 0.08, -1.96, 1.7, -4.95);
+    frameBox(0.08, 1.66, 0.08, 0.76, 1.7, -4.95);
+    frameBox(0.05, 1.5, 0.06, -0.6, 1.7, -4.94);
+    frameBox(2.6, 0.05, 0.06, -0.6, 1.7, -4.94);
 
     function makeBox(w, h, d, color, x, y, z) {
       const mesh = new THREE.Mesh(
