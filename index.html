@@ -125,7 +125,7 @@
     #dbg {
       position: fixed;
       left: 10px;
-      bottom: max(84px, calc(env(safe-area-inset-bottom) + 76px));
+      bottom: max(120px, calc(env(safe-area-inset-bottom) + 112px));
       color: #7CFC00;
       background: rgba(0, 0, 0, 0.55);
       font-size: 10px;
@@ -136,6 +136,25 @@
       max-width: 70%;
       pointer-events: auto;
       font-family: monospace;
+    }
+
+    #sizeCtl {
+      position: fixed;
+      left: 10px;
+      bottom: max(84px, calc(env(safe-area-inset-bottom) + 76px));
+      display: flex;
+      gap: 6px;
+      z-index: 36;
+    }
+
+    #sizeCtl button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 800;
+      color: white;
+      background: rgba(70, 70, 80, 0.85);
     }
 
     .iconBtn {
@@ -296,6 +315,11 @@
 
   <div id="dbg">BOOTING...</div>
 
+  <div id="sizeCtl">
+    <button id="cMinus">C-</button>
+    <button id="cPlus">C+</button>
+  </div>
+
   <button id="diaryBtn" class="iconBtn">📔</button>
 
   <div id="actionSheet">
@@ -393,6 +417,55 @@
     }, 7000);
 
     let sleeping = false;
+
+    let charModel = null;
+    let charScale = 1;
+    let boneListGlobal = [];
+
+    function measureBoneSpan() {
+      if (!charModel || boneListGlobal.length === 0) return null;
+      charModel.updateWorldMatrix(true, true);
+      const v = new THREE.Vector3();
+      const box = new THREE.Box3();
+      for (const b of boneListGlobal) {
+        b.getWorldPosition(v);
+        box.expandByPoint(v);
+      }
+      return { span: box.max.y - box.min.y, minY: box.min.y };
+    }
+
+    function updateDbg() {
+      const meas = measureBoneSpan();
+      let txt = "SCALE:" + charScale.toFixed(3);
+      if (meas && isFinite(meas.span)) {
+        txt += " • H:" + (meas.span + 0.15).toFixed(2);
+      }
+      txt += " • bones:" + boneListGlobal.length;
+      dbgEl.textContent = txt;
+    }
+
+    function applyCharScale(s) {
+      if (!charModel) return;
+      if (!isFinite(s) || s <= 0.0001 || s > 10000) return;
+
+      charScale = s;
+      charModel.scale.setScalar(s);
+
+      const meas = measureBoneSpan();
+      if (meas && isFinite(meas.minY)) {
+        charModel.position.y -= meas.minY;
+      }
+
+      updateDbg();
+    }
+
+    document.getElementById("cMinus").addEventListener("click", () => {
+      applyCharScale(charScale * 0.9);
+    });
+
+    document.getElementById("cPlus").addEventListener("click", () => {
+      applyCharScale(charScale / 0.9);
+    });
 
     document.getElementById("diaryBtn").addEventListener("click", () => {
       if (sleeping) return;
@@ -513,6 +586,21 @@
     rug.position.y = 0.02;
     rug.receiveShadow = true;
     scene.add(rug);
+
+    const pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.03, 0.03, 1.7, 12),
+      new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.6 })
+    );
+    pole.position.set(3.2, 0.85, 2.8);
+    pole.castShadow = true;
+    scene.add(pole);
+
+    const poleCap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 12, 12),
+      new THREE.MeshStandardMaterial({ color: "#ff3b30", roughness: 0.5 })
+    );
+    poleCap.position.set(3.2, 1.7, 2.8);
+    scene.add(poleCap);
 
     function makeWall(x, z, rotationY) {
       const wall = new THREE.Mesh(
@@ -669,7 +757,7 @@
       startTransition({
         toPos: new THREE.Vector3(player.position.x, 0, player.position.z),
         toRot: { x: 0, y: player.rotation.y, z: 0 },
-        dur: 0.45,
+        dur: 0.4,
         oneShot: actions.stand ? "stand" : null,
         blend: actions.stand ? null : "idle",
         onDone: callback
@@ -747,7 +835,7 @@
         startTransition({
           toPos: spots.chairSit,
           toRot: { x: 0, y: Math.PI, z: 0 },
-          dur: 0.55,
+          dur: 0.4,
           blend: actions.sit ? "sit" : "idle",
           onDone: () => {
             logEvent("Sat down small to rest mind.");
@@ -962,51 +1050,15 @@
         playAction("idle");
         mixer.update(0.0001);
 
-        let info = "BONES:" + boneList.length;
+        charModel = model;
+        boneListGlobal = boneList;
 
-        try {
-          if (boneList.length > 0) {
-            model.updateWorldMatrix(true, true);
-
-            const v = new THREE.Vector3();
-            const box = new THREE.Box3();
-            for (const b of boneList) {
-              b.getWorldPosition(v);
-              box.expandByPoint(v);
-            }
-
-            const span = box.max.y - box.min.y;
-
-            if (isFinite(span) && span > 0.001) {
-              const s = 1.55 / span;
-
-              if (isFinite(s) && s > 0.0001 && s < 10000) {
-                model.scale.setScalar(s);
-                info += " span:" + span.toFixed(1) + "→1.55";
-              }
-
-              model.updateWorldMatrix(true, true);
-
-              const box2 = new THREE.Box3();
-              for (const b of boneList) {
-                b.getWorldPosition(v);
-                box2.expandByPoint(v);
-              }
-
-              if (isFinite(box2.min.y)) {
-                model.position.y -= box2.min.y;
-              }
-            }
-          }
-        } catch (e) {
-          info += " size-skip";
+        const meas = measureBoneSpan();
+        let startScale = 1;
+        if (meas && isFinite(meas.span) && meas.span > 0.001) {
+          startScale = 1.55 / meas.span;
         }
-
-        if (!isFinite(model.scale.x) || model.scale.x <= 0) {
-          model.scale.setScalar(1);
-        }
-
-        dbgEl.textContent = "MODEL OK • " + info + " • ANIMS: " + clips.map((c) => c.name).join(", ");
+        applyCharScale(startScale);
 
         hideLoading();
       },
