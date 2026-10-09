@@ -43,6 +43,21 @@
       padding: 20px;
     }
 
+    #fade {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.9s ease;
+      z-index: 60;
+    }
+
+    #fade.on {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
     .hud {
       position: fixed;
       left: 0;
@@ -140,6 +155,7 @@
 
 <body>
   <div id="loading">Loading Dollhouse Test...</div>
+  <div id="fade"></div>
 
   <div class="hud">
     <div class="panel">
@@ -150,12 +166,12 @@
 
     <div class="panel">
       <div><b>₦<span id="money">1,000</span></b></div>
-      <div>Time: <span id="clock">08:00</span></div>
+      <div>Day <span id="day">1</span> • <span id="clock">08:00</span></div>
     </div>
   </div>
 
   <div class="hint" id="hint">
-    Tap floor to move • Tap objects to interact • Drag to rotate • Pinch to zoom
+    Tap bed / chair / table • Tap floor to move • Drag rotate • Pinch zoom
   </div>
 
   <div class="actions">
@@ -174,16 +190,19 @@
       money: 1000,
       energy: 100,
       hunger: 100,
-      minutes: 8 * 60
+      minutes: 8 * 60,
+      day: 1
     };
 
     const energyEl = document.getElementById("energy");
     const hungerEl = document.getElementById("hunger");
     const moneyEl = document.getElementById("money");
     const clockEl = document.getElementById("clock");
+    const dayEl = document.getElementById("day");
     const toastEl = document.getElementById("toast");
     const loadingEl = document.getElementById("loading");
     const hintEl = document.getElementById("hint");
+    const fadeEl = document.getElementById("fade");
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -194,6 +213,7 @@
       energyEl.textContent = Math.round(state.energy);
       hungerEl.textContent = Math.round(state.hunger);
       moneyEl.textContent = state.money.toLocaleString();
+      dayEl.textContent = state.day;
 
       const hours24 = Math.floor(state.minutes / 60) % 24;
       const mins = Math.floor(state.minutes % 60);
@@ -225,7 +245,10 @@
       hintEl.style.display = "none";
     }, 7000);
 
+    let sleeping = false;
+
     document.getElementById("hustleBtn").addEventListener("click", () => {
+      if (sleeping) return;
       if (state.energy < 10) { showToast("You no get energy"); return; }
       if (state.hunger < 10) { showToast("You too hungry to hustle"); return; }
 
@@ -238,6 +261,7 @@
     });
 
     document.getElementById("eatBtn").addEventListener("click", () => {
+      if (sleeping) return;
       if (state.money < 350) { showToast("No money for buka"); return; }
       if (state.hunger >= 100) { showToast("You don full"); return; }
 
@@ -249,6 +273,7 @@
     });
 
     document.getElementById("restBtn").addEventListener("click", () => {
+      if (sleeping) return;
       if (state.energy >= 100) { showToast("Energy don full"); return; }
 
       state.energy += 25;
@@ -288,6 +313,7 @@
 
     const tapMeshes = [];
     const interactiveObjects = [];
+    let foodMesh = null;
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(80, 80),
@@ -357,21 +383,19 @@
       return mesh;
     }
 
-    // BED
     let m;
-    m = makeBox(2.1, 0.32, 3.3, "#8a5a3b", -3.1, 0.16, -2.6); m.userData.type = 'bed'; interactiveObjects.push(m);
-    m = makeBox(1.9, 0.22, 3.1, "#f3f3f3", -3.1, 0.43, -2.6); m.userData.type = 'bed'; interactiveObjects.push(m);
-    m = makeBox(1.5, 0.16, 0.7, "#d9e8ff", -3.1, 0.58, -3.8); m.userData.type = 'bed'; interactiveObjects.push(m);
 
-    // TABLE
-    m = makeCylinder(0.75, 0.75, 0.08, "#8a5a3b", 1.8, 0.75, -1.8); m.userData.type = 'table'; interactiveObjects.push(m);
-    m = makeCylinder(0.08, 0.08, 0.72, "#6d4429", 1.8, 0.36, -1.8); m.userData.type = 'table'; interactiveObjects.push(m);
-    m = makeCylinder(0.24, 0.24, 0.03, "#ffffff", 1.8, 0.81, -1.8); m.userData.type = 'table'; interactiveObjects.push(m);
-    m = makeCylinder(0.13, 0.13, 0.05, "#e07a2f", 1.8, 0.84, -1.8); m.userData.type = 'table'; interactiveObjects.push(m);
+    m = makeBox(2.1, 0.32, 3.3, "#8a5a3b", -3.1, 0.16, -2.6); m.userData.type = "bed"; interactiveObjects.push(m);
+    m = makeBox(1.9, 0.22, 3.1, "#f3f3f3", -3.1, 0.43, -2.6); m.userData.type = "bed"; interactiveObjects.push(m);
+    m = makeBox(1.5, 0.16, 0.7, "#d9e8ff", -3.1, 0.58, -3.8); m.userData.type = "bed"; interactiveObjects.push(m);
 
-    // CHAIR
-    m = makeBox(0.55, 0.07, 0.55, "#7c4f2a", 1.8, 0.45, -0.7); m.userData.type = 'chair'; interactiveObjects.push(m);
-    m = makeBox(0.55, 0.65, 0.07, "#7c4f2a", 1.8, 0.82, -0.45); m.userData.type = 'chair'; interactiveObjects.push(m);
+    m = makeCylinder(0.75, 0.75, 0.08, "#8a5a3b", 1.8, 0.75, -1.8); m.userData.type = "table"; interactiveObjects.push(m);
+    m = makeCylinder(0.08, 0.08, 0.72, "#6d4429", 1.8, 0.36, -1.8); m.userData.type = "table"; interactiveObjects.push(m);
+    m = makeCylinder(0.24, 0.24, 0.03, "#ffffff", 1.8, 0.81, -1.8); m.userData.type = "table"; interactiveObjects.push(m);
+    foodMesh = makeCylinder(0.13, 0.13, 0.05, "#e07a2f", 1.8, 0.84, -1.8); foodMesh.userData.type = "table"; interactiveObjects.push(foodMesh);
+
+    m = makeBox(0.55, 0.07, 0.55, "#7c4f2a", 1.8, 0.45, -0.7); m.userData.type = "chair"; interactiveObjects.push(m);
+    m = makeBox(0.55, 0.65, 0.07, "#7c4f2a", 1.8, 0.82, -0.45); m.userData.type = "chair"; interactiveObjects.push(m);
 
     makeCylinder(0.04, 0.04, 1.6, "#444444", -4.2, 0.8, -4.2);
     const lampShade = new THREE.Mesh(
@@ -394,12 +418,20 @@
     player.position.set(0, 0, 1.5);
     scene.add(player);
 
+    const spots = {
+      bedLie: new THREE.Vector3(-3.1, 0.6, -1.6),
+      bedStand: new THREE.Vector3(-1.75, 0, -2.6),
+      chairSit: new THREE.Vector3(1.8, 0, -0.7),
+      tableCenter: new THREE.Vector3(1.8, 0, -1.8)
+    };
+
     let mixer = null;
     let actions = {};
     let activeAction = null;
     let isMoving = false;
     let target = null;
     let pendingAction = null;
+    let posture = "stand";
 
     function playAction(name) {
       const next = actions[name];
@@ -409,6 +441,7 @@
       next.reset();
       next.setEffectiveTimeScale(1);
       next.setEffectiveWeight(1);
+      next.setLoop(THREE.LoopRepeat, Infinity);
       next.fadeIn(0.25);
       next.play();
 
@@ -416,36 +449,91 @@
       activeAction = next;
     }
 
+    function playOneShot(name) {
+      const next = actions[name];
+      if (!next) return;
+
+      next.reset();
+      next.setLoop(THREE.LoopOnce, 1);
+      next.clampWhenFinished = true;
+      next.setEffectiveWeight(1);
+      next.fadeIn(0.15);
+      next.play();
+
+      if (activeAction) activeAction.fadeOut(0.15);
+      activeAction = next;
+    }
+
     function executeAction(type) {
-        if (type === 'bed') {
-            showToast("You go sleep... 💤");
-            state.energy += 40;
-            state.hunger -= 15;
-            addMinutes(480);
-        } else if (type === 'chair') {
-            showToast("You sit down 🪑");
-            state.energy += 10;
-            addMinutes(15);
-        } else if (type === 'table') {
-            if (state.money < 350) {
-                showToast("No money for food");
-                return;
-            }
-            state.money -= 350;
-            state.hunger += 50;
-            showToast("You chop home food 🍲");
-            addMinutes(20);
+      if (type === "bed") {
+        showToast("You lie down for bed...");
+        posture = "lie";
+        player.position.copy(spots.bedLie);
+        player.rotation.set(-Math.PI / 2, 0, 0);
+        playAction("idle");
+
+        sleeping = true;
+
+        setTimeout(() => {
+          fadeEl.classList.add("on");
+
+          setTimeout(() => {
+            state.day += 1;
+            state.minutes = 8 * 60;
+            state.energy = 100;
+            state.hunger = Math.max(0, state.hunger - 20);
+            foodMesh.visible = true;
+            updateHUD();
+
+            posture = "stand";
+            player.position.copy(spots.bedStand);
+            player.rotation.set(0, -Math.PI / 2, 0);
+            playAction("idle");
+
+            fadeEl.classList.remove("on");
+            showToast("You sleep well. Day " + state.day + " don break.");
+
+            setTimeout(() => {
+              sleeping = false;
+            }, 900);
+          }, 1500);
+        }, 1100);
+      } else if (type === "chair") {
+        posture = "sit";
+        player.position.copy(spots.chairSit);
+        player.rotation.set(0, Math.PI, 0);
+        playAction(actions.sit ? "sit" : "idle");
+        showToast("You sit down small.");
+      } else if (type === "table") {
+        if (state.money < 350) {
+          showToast("No money for food");
+          return;
         }
-        updateHUD();
+
+        state.money -= 350;
+        state.hunger = clamp(state.hunger + 50, 0, 100);
+        addMinutes(20);
+
+        const dirToTable = spots.tableCenter.clone().sub(player.position);
+        player.rotation.set(0, Math.atan2(dirToTable.x, dirToTable.z), 0);
+
+        foodMesh.visible = false;
+        playOneShot("thumbs");
+        showToast("You chop home food. Body sweet you.");
+      }
+
+      updateHUD();
     }
 
     function createPlaceholderCharacter() {
       const bodyMat = new THREE.MeshStandardMaterial({ color: "#8d6e63", roughness: 0.75 });
       const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 0.9, 8, 16), bodyMat);
-      body.position.y = 0.95; body.castShadow = true;
+      body.position.y = 0.95;
+      body.castShadow = true;
 
       const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 24, 24), new THREE.MeshStandardMaterial({ color: "#a9825f", roughness: 0.7 }));
-      head.position.y = 1.78; head.castShadow = true;
+      head.position.y = 1.78;
+      head.castShadow = true;
 
       player.add(body, head);
       hideLoading();
@@ -459,7 +547,12 @@
       (gltf) => {
         const model = gltf.scene;
         model.scale.setScalar(1.02);
-        model.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+        model.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
         player.add(model);
 
         mixer = new THREE.AnimationMixer(model);
@@ -473,13 +566,25 @@
           return null;
         }
 
-        const idleClip = findClip(["idle", "stand", "breath"]) || clips[0] || null;
-        const walkClip = findClip(["walk", "walking", "run"]) || clips[1] || idleClip;
+        const idleClip = findClip(["idle", "breath"]) || clips[0] || null;
+        const walkClip = findClip(["walk", "walking"]) || clips[1] || idleClip;
+        const sitClip = findClip(["sitting", "sit"]) || null;
+        const thumbsClip = findClip(["thumbs", "thumb"]) || null;
 
         if (idleClip) actions.idle = mixer.clipAction(idleClip);
         if (walkClip) actions.walk = mixer.clipAction(walkClip);
+        if (sitClip) actions.sit = mixer.clipAction(sitClip);
+        if (thumbsClip) actions.thumbs = mixer.clipAction(thumbsClip);
 
-        playAction(actions.idle ? "idle" : "walk");
+        mixer.addEventListener("finished", () => {
+          if (posture === "sit") {
+            playAction("sit");
+          } else if (posture === "stand" && !isMoving) {
+            playAction("idle");
+          }
+        });
+
+        playAction("idle");
         hideLoading();
       },
       undefined,
@@ -511,44 +616,51 @@
     }
 
     function handleTap(event) {
+      if (sleeping) return;
+
       const rect = renderer.domElement.getBoundingClientRect();
       pointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(pointerNdc, camera);
 
-      // 1. Check if we tapped an interactive object
       const objHits = raycaster.intersectObjects(interactiveObjects, false);
       if (objHits.length > 0) {
-          const hitObj = objHits[0].object;
-          const type = hitObj.userData.type;
+        const type = objHits[0].object.userData.type;
 
-          if (type) {
-              const objPos = hitObj.position.clone();
-              // Calculate a spot to stand (1.2 units away from the object, towards the player)
-              const dir = player.position.clone().sub(objPos).normalize();
-              const standSpot = objPos.clone().add(dir.multiplyScalar(1.2));
-              standSpot.y = 0;
+        if (type === "chair" && posture === "sit") {
+          posture = "stand";
+          player.rotation.set(0, player.rotation.y, 0);
+          target = new THREE.Vector3(1.8, 0, 0.4);
+          pendingAction = null;
+          marker.position.set(1.8, 0.03, 0.4);
+          marker.visible = true;
+          return;
+        }
 
-              target = standSpot;
-              pendingAction = type;
+        if (type) {
+          const objPos = objHits[0].object.position.clone();
+          const dir = player.position.clone().sub(objPos).normalize();
+          const standSpot = objPos.clone().add(dir.multiplyScalar(1.2));
+          standSpot.y = 0;
 
-              marker.position.copy(standSpot);
-              marker.position.y = 0.03;
-              marker.visible = true;
-              return;
-          }
+          target = standSpot;
+          pendingAction = type;
+
+          marker.position.set(standSpot.x, 0.03, standSpot.z);
+          marker.visible = true;
+          return;
+        }
       }
 
-      // 2. Check if we tapped the floor
       const floorHits = raycaster.intersectObjects(tapMeshes, false);
       if (floorHits.length > 0) {
-          const point = floorHits[0].point;
-          target = new THREE.Vector3(point.x, 0, point.z);
-          pendingAction = null; // cancel any pending object action
+        const point = floorHits[0].point;
+        target = new THREE.Vector3(point.x, 0, point.z);
+        pendingAction = null;
 
-          marker.position.set(point.x, point.y + 0.03, point.z);
-          marker.visible = true;
+        marker.position.set(point.x, point.y + 0.03, point.z);
+        marker.visible = true;
       }
     }
 
@@ -621,17 +733,29 @@
         const targetYaw = Math.atan2(direction.x, direction.z);
         player.rotation.y = lerpAngle(player.rotation.y, targetYaw, 12 * delta);
 
-        if (!isMoving) { isMoving = true; playAction("walk"); }
+        if (!isMoving) {
+          isMoving = true;
+
+          if (posture !== "stand") {
+            posture = "stand";
+            player.rotation.set(0, player.rotation.y, 0);
+            player.position.y = 0;
+          }
+
+          playAction("walk");
+        }
       } else {
         target = null;
         marker.visible = false;
 
-        if (isMoving) { isMoving = false; playAction("idle"); }
+        if (isMoving) {
+          isMoving = false;
+          playAction("idle");
+        }
 
-        // Execute pending object interaction
         if (pendingAction) {
-            executeAction(pendingAction);
-            pendingAction = null;
+          executeAction(pendingAction);
+          pendingAction = null;
         }
       }
     }
