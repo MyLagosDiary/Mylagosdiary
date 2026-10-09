@@ -419,9 +419,11 @@
     scene.add(player);
 
     const spots = {
-      bedLie: new THREE.Vector3(-3.1, 0.6, -1.6),
-      bedStand: new THREE.Vector3(-1.75, 0, -2.6),
+      bedApproach: new THREE.Vector3(-1.75, 0, -2.6),
+      bedLie: new THREE.Vector3(-3.1, 0.62, -1.8),
+      chairApproach: new THREE.Vector3(1.05, 0, 0.2),
       chairSit: new THREE.Vector3(1.8, 0, -0.7),
+      tableApproach: new THREE.Vector3(0.95, 0, -1.8),
       tableCenter: new THREE.Vector3(1.8, 0, -1.8)
     };
 
@@ -432,6 +434,7 @@
     let target = null;
     let pendingAction = null;
     let posture = "stand";
+    let transition = null;
 
     function playAction(name) {
       const next = actions[name];
@@ -464,65 +467,121 @@
       activeAction = next;
     }
 
-    function executeAction(type) {
-      if (type === "bed") {
-        showToast("You lie down for bed...");
-        posture = "lie";
-        player.position.copy(spots.bedLie);
-        player.rotation.set(-Math.PI / 2, 0, 0);
-        playAction("idle");
+    function startTransition(opts) {
+      transition = {
+        t: 0,
+        dur: opts.dur,
+        fromPos: player.position.clone(),
+        toPos: opts.toPos.clone(),
+        fromRot: { x: player.rotation.x, y: player.rotation.y, z: player.rotation.z },
+        toRot: { x: opts.toRot.x, y: opts.toRot.y, z: opts.toRot.z },
+        onDone: opts.onDone || null
+      };
 
-        sleeping = true;
+      if (opts.blend) playAction(opts.blend);
+    }
 
-        setTimeout(() => {
-          fadeEl.classList.add("on");
-
-          setTimeout(() => {
-            state.day += 1;
-            state.minutes = 8 * 60;
-            state.energy = 100;
-            state.hunger = Math.max(0, state.hunger - 20);
-            foodMesh.visible = true;
-            updateHUD();
-
-            posture = "stand";
-            player.position.copy(spots.bedStand);
-            player.rotation.set(0, -Math.PI / 2, 0);
-            playAction("idle");
-
-            fadeEl.classList.remove("on");
-            showToast("You sleep well. Day " + state.day + " don break.");
-
-            setTimeout(() => {
-              sleeping = false;
-            }, 900);
-          }, 1500);
-        }, 1100);
-      } else if (type === "chair") {
-        posture = "sit";
-        player.position.copy(spots.chairSit);
-        player.rotation.set(0, Math.PI, 0);
-        playAction(actions.sit ? "sit" : "idle");
-        showToast("You sit down small.");
-      } else if (type === "table") {
-        if (state.money < 350) {
-          showToast("No money for food");
-          return;
-        }
-
-        state.money -= 350;
-        state.hunger = clamp(state.hunger + 50, 0, 100);
-        addMinutes(20);
-
-        const dirToTable = spots.tableCenter.clone().sub(player.position);
-        player.rotation.set(0, Math.atan2(dirToTable.x, dirToTable.z), 0);
-
-        foodMesh.visible = false;
-        playOneShot("thumbs");
-        showToast("You chop home food. Body sweet you.");
+    function standUpThen(callback) {
+      if (posture === "stand") {
+        callback();
+        return;
       }
 
-      updateHUD();
+      posture = "stand";
+
+      startTransition({
+        toPos: new THREE.Vector3(player.position.x, 0, player.position.z),
+        toRot: { x: 0, y: player.rotation.y, z: 0 },
+        dur: 0.35,
+        blend: "idle",
+        onDone: callback
+      });
+    }
+
+    function startSleep() {
+      sleeping = true;
+
+      setTimeout(() => {
+        fadeEl.classList.add("on");
+
+        setTimeout(() => {
+          state.day += 1;
+          state.minutes = 8 * 60;
+          state.energy = 100;
+          state.hunger = Math.max(0, state.hunger - 20);
+          foodMesh.visible = true;
+          updateHUD();
+
+          posture = "stand";
+          player.position.copy(spots.bedApproach);
+          player.rotation.set(0, -Math.PI / 2, 0);
+          playAction("idle");
+
+          fadeEl.classList.remove("on");
+          showToast("You sleep well. Day " + state.day + " don break.");
+
+          setTimeout(() => {
+            sleeping = false;
+          }, 900);
+        }, 1500);
+      }, 1100);
+    }
+
+    function executeAction(type) {
+      if (type === "bed") {
+        posture = "lie";
+
+        startTransition({
+          toPos: spots.bedApproach,
+          toRot: { x: 0, y: -Math.PI / 2, z: 0 },
+          dur: 0.35,
+          blend: "idle",
+          onDone: () => {
+            startTransition({
+              toPos: spots.bedLie,
+              toRot: { x: -Math.PI / 2, y: 0, z: 0 },
+              dur: 0.7,
+              blend: "idle",
+              onDone: startSleep
+            });
+          }
+        });
+      } else if (type === "chair") {
+        posture = "sit";
+
+        startTransition({
+          toPos: spots.chairSit,
+          toRot: { x: 0, y: Math.PI, z: 0 },
+          dur: 0.55,
+          blend: actions.sit ? "sit" : "idle",
+          onDone: () => showToast("You sit down small.")
+        });
+      } else if (type === "table") {
+        const dirToTable = spots.tableCenter.clone().sub(player.position);
+        const faceYaw = Math.atan2(dirToTable.x, dirToTable.z);
+
+        startTransition({
+          toPos: player.position.clone(),
+          toRot: { x: 0, y: faceYaw, z: 0 },
+          dur: 0.3,
+          blend: "idle",
+          onDone: () => {
+            if (state.money < 350) {
+              showToast("No money for food");
+              return;
+            }
+
+            state.money -= 350;
+            state.hunger = clamp(state.hunger + 50, 0, 100);
+            addMinutes(20);
+
+            foodMesh.visible = false;
+            playOneShot("thumbs");
+            showToast("You chop home food. Body sweet you.");
+            updateHUD();
+          }
+        });
+      }
     }
 
     function createPlaceholderCharacter() {
@@ -579,7 +638,7 @@
         mixer.addEventListener("finished", () => {
           if (posture === "sit") {
             playAction("sit");
-          } else if (posture === "stand" && !isMoving) {
+          } else if (posture === "stand" && !isMoving && !transition) {
             playAction("idle");
           }
         });
@@ -615,8 +674,14 @@
       return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
     }
 
+    function setMoveTarget(point) {
+      target = new THREE.Vector3(point.x, 0, point.z);
+      marker.position.set(point.x, 0.03, point.z);
+      marker.visible = true;
+    }
+
     function handleTap(event) {
-      if (sleeping) return;
+      if (sleeping || transition) return;
 
       const rect = renderer.domElement.getBoundingClientRect();
       pointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -628,27 +693,28 @@
       if (objHits.length > 0) {
         const type = objHits[0].object.userData.type;
 
-        if (type === "chair" && posture === "sit") {
-          posture = "stand";
-          player.rotation.set(0, player.rotation.y, 0);
-          target = new THREE.Vector3(1.8, 0, 0.4);
-          pendingAction = null;
-          marker.position.set(1.8, 0.03, 0.4);
-          marker.visible = true;
+        if (type === "bed") {
+          pendingAction = "bed";
+          setMoveTarget(spots.bedApproach);
           return;
         }
 
-        if (type) {
-          const objPos = objHits[0].object.position.clone();
-          const dir = player.position.clone().sub(objPos).normalize();
-          const standSpot = objPos.clone().add(dir.multiplyScalar(1.2));
-          standSpot.y = 0;
+        if (type === "chair") {
+          if (posture === "sit") {
+            pendingAction = null;
+            standUpThen(() => {
+              setMoveTarget(spots.chairApproach);
+            });
+          } else {
+            pendingAction = "chair";
+            setMoveTarget(spots.chairApproach);
+          }
+          return;
+        }
 
-          target = standSpot;
-          pendingAction = type;
-
-          marker.position.set(standSpot.x, 0.03, standSpot.z);
-          marker.visible = true;
+        if (type === "table") {
+          pendingAction = "table";
+          setMoveTarget(spots.tableApproach);
           return;
         }
       }
@@ -656,11 +722,13 @@
       const floorHits = raycaster.intersectObjects(tapMeshes, false);
       if (floorHits.length > 0) {
         const point = floorHits[0].point;
-        target = new THREE.Vector3(point.x, 0, point.z);
         pendingAction = null;
 
-        marker.position.set(point.x, point.y + 0.03, point.z);
-        marker.visible = true;
+        if (posture !== "stand") {
+          standUpThen(() => setMoveTarget(point));
+        } else {
+          setMoveTarget(point);
+        }
       }
     }
 
@@ -735,13 +803,6 @@
 
         if (!isMoving) {
           isMoving = true;
-
-          if (posture !== "stand") {
-            posture = "stand";
-            player.rotation.set(0, player.rotation.y, 0);
-            player.position.y = 0;
-          }
-
           playAction("walk");
         }
       } else {
@@ -754,9 +815,28 @@
         }
 
         if (pendingAction) {
-          executeAction(pendingAction);
+          const action = pendingAction;
           pendingAction = null;
+          executeAction(action);
         }
+      }
+    }
+
+    function updateTransition(delta) {
+      transition.t += delta;
+      const k = Math.min(transition.t / transition.dur, 1);
+      const e = k * k * (3 - 2 * k);
+
+      player.position.lerpVectors(transition.fromPos, transition.toPos, e);
+
+      player.rotation.x = transition.fromRot.x + (transition.toRot.x - transition.fromRot.x) * e;
+      player.rotation.y = transition.fromRot.y + (transition.toRot.y - transition.fromRot.y) * e;
+      player.rotation.z = transition.fromRot.z + (transition.toRot.z - transition.fromRot.z) * e;
+
+      if (k >= 1) {
+        const callback = transition.onDone;
+        transition = null;
+        if (callback) callback();
       }
     }
 
@@ -775,7 +855,13 @@
       requestAnimationFrame(animate);
       const delta = Math.min(clock.getDelta(), 0.05);
       if (mixer) mixer.update(delta);
-      handleMovement(delta);
+
+      if (transition) {
+        updateTransition(delta);
+      } else {
+        handleMovement(delta);
+      }
+
       updateCamera();
       renderer.render(scene, camera);
     }
