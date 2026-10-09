@@ -354,6 +354,9 @@
       state.todayEvents.push(clockString() + " — " + text);
     }
 
+    let warnedHunger = false;
+    let warnedEnergy = false;
+
     function updateHUD() {
       state.energy = clamp(state.energy, 0, 100);
       state.hunger = clamp(state.hunger, 0, 100);
@@ -365,6 +368,18 @@
       moneyEl.textContent = state.money.toLocaleString();
       dayEl.textContent = state.day;
       clockEl.textContent = clockString();
+
+      if (state.hunger < 25 && !warnedHunger) {
+        warnedHunger = true;
+        showToast("You dey hungry o! Chop something.");
+      }
+      if (state.hunger >= 40) warnedHunger = false;
+
+      if (state.energy < 25 && !warnedEnergy) {
+        warnedEnergy = true;
+        showToast("Energy dey low o! Rest small.");
+      }
+      if (state.energy >= 40) warnedEnergy = false;
 
       updateDayNight();
     }
@@ -396,6 +411,7 @@
 
     let charModel = null;
     let charScale = 0.42;
+    let charSource = "none";
     let boneListGlobal = [];
 
     function measureBoneSpan() {
@@ -412,7 +428,7 @@
 
     function updateDbg() {
       const meas = measureBoneSpan();
-      let txt = "SCALE:" + charScale.toFixed(3);
+      let txt = "SRC:" + charSource + " SCALE:" + charScale.toFixed(3);
       if (meas && isFinite(meas.span)) {
         txt += " • H:" + (meas.span + 0.15).toFixed(2);
       }
@@ -549,10 +565,10 @@
         g.fillRect(x, 0, 4, 128);
       }
 
-      g.fillStyle = "rgba(150,90,50,0.18)";
-      for (let i = 0; i < 14; i++) {
+      g.fillStyle = "rgba(140,85,45,0.10)";
+      for (let i = 0; i < 8; i++) {
         g.beginPath();
-        g.arc(Math.random() * 128, Math.random() * 128, 3 + Math.random() * 6, 0, Math.PI * 2);
+        g.ellipse(Math.random() * 128, Math.random() * 128, 4 + Math.random() * 7, 2 + Math.random() * 4, Math.random() * 3, 0, Math.PI * 2);
         g.fill();
       }
 
@@ -1113,77 +1129,89 @@
     }
 
     const loader = new GLTFLoader();
-    const modelUrl = "https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb";
+    const HERO_URL = "assets/models/hero.glb";
+    const FALLBACK_URL = "https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb";
+
+    function onModelLoaded(gltf, source) {
+      const model = gltf.scene;
+      player.add(model);
+
+      const boneList = [];
+
+      model.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+        if (child.isBone) {
+          boneList.push(child);
+        }
+      });
+
+      mixer = new THREE.AnimationMixer(model);
+      const clips = gltf.animations || [];
+
+      function findClip(names) {
+        for (const name of names) {
+          const clip = clips.find((c) => c.name.toLowerCase().includes(name));
+          if (clip) return clip;
+        }
+        return null;
+      }
+
+      const idleClip = findClip(["idle"]) || clips[0] || null;
+      const walkClip = findClip(["walk"]) || clips[1] || idleClip;
+      const sitClip = findClip(["sit"]) || null;
+      const standClip = findClip(["standing", "stand up", "stand"]) || null;
+      const thumbsClip = findClip(["thumbs"]) || null;
+      const danceClip = findClip(["dance"]) || null;
+      const waveClip = findClip(["wave"]) || null;
+
+      if (idleClip) actions.idle = mixer.clipAction(idleClip);
+      if (walkClip) actions.walk = mixer.clipAction(walkClip);
+      if (sitClip) actions.sit = mixer.clipAction(sitClip);
+      if (standClip) actions.stand = mixer.clipAction(standClip);
+      if (thumbsClip) actions.thumbs = mixer.clipAction(thumbsClip);
+      if (danceClip) actions.dance = mixer.clipAction(danceClip);
+      if (waveClip) actions.wave = mixer.clipAction(waveClip);
+
+      mixer.addEventListener("finished", () => {
+        if (posture === "sit") {
+          playAction("sit");
+        } else if (posture === "stand" && !isMoving && !transition) {
+          playAction("idle");
+        }
+      });
+
+      playAction("idle");
+      mixer.update(0.0001);
+
+      charModel = model;
+      boneListGlobal = boneList;
+      charSource = source;
+
+      applyCharScale(1.55 / Math.max(0.001, (measureBoneSpan() || { span: 1.55 }).span));
+
+      hideLoading();
+    }
 
     loader.load(
-      modelUrl,
-      (gltf) => {
-        const model = gltf.scene;
-        player.add(model);
-
-        const boneList = [];
-
-        model.traverse((child) => {
-          if (child.isMesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-          }
-          if (child.isBone) {
-            boneList.push(child);
-          }
-        });
-
-        mixer = new THREE.AnimationMixer(model);
-        const clips = gltf.animations || [];
-
-        function findClip(names) {
-          for (const name of names) {
-            const clip = clips.find((c) => c.name.toLowerCase().includes(name));
-            if (clip) return clip;
-          }
-          return null;
-        }
-
-        const idleClip = findClip(["idle"]) || clips[0] || null;
-        const walkClip = findClip(["walk"]) || clips[1] || idleClip;
-        const sitClip = findClip(["sit"]) || null;
-        const standClip = findClip(["standing", "stand"]) || null;
-        const thumbsClip = findClip(["thumbs"]) || null;
-        const danceClip = findClip(["dance"]) || null;
-        const waveClip = findClip(["wave"]) || null;
-
-        if (idleClip) actions.idle = mixer.clipAction(idleClip);
-        if (walkClip) actions.walk = mixer.clipAction(walkClip);
-        if (sitClip) actions.sit = mixer.clipAction(sitClip);
-        if (standClip) actions.stand = mixer.clipAction(standClip);
-        if (thumbsClip) actions.thumbs = mixer.clipAction(thumbsClip);
-        if (danceClip) actions.dance = mixer.clipAction(danceClip);
-        if (waveClip) actions.wave = mixer.clipAction(waveClip);
-
-        mixer.addEventListener("finished", () => {
-          if (posture === "sit") {
-            playAction("sit");
-          } else if (posture === "stand" && !isMoving && !transition) {
-            playAction("idle");
-          }
-        });
-
-        playAction("idle");
-        mixer.update(0.0001);
-
-        charModel = model;
-        boneListGlobal = boneList;
-
-        applyCharScale(0.42);
-
-        hideLoading();
-      },
+      HERO_URL,
+      (gltf) => onModelLoaded(gltf, "hero"),
       undefined,
-      (error) => {
-        console.error("Model load error:", error);
-        dbgEl.textContent = "MODEL FAILED • placeholder";
-        createPlaceholderCharacter();
-        showToast("Character model failed. Using placeholder.");
+      () => {
+        loader.load(
+          FALLBACK_URL,
+          (gltf) => onModelLoaded(gltf, "robot"),
+          undefined,
+          (error) => {
+            console.error("Model load error:", error);
+            charSource = "placeholder";
+            updateDbg();
+            createPlaceholderCharacter();
+            showToast("Character model failed. Using placeholder.");
+          }
+        );
       }
     );
 
@@ -1198,8 +1226,8 @@
     let lastPinchDistance = 0;
 
     let yaw = 0.65;
-    let pitch = 1.03;
-    let distance = 8.5;
+    let pitch = 1.06;
+    let distance = 9.5;
 
     function getPinchDistance() {
       const points = [...activePointers.values()];
@@ -1270,7 +1298,7 @@
         const currentPinchDistance = getPinchDistance();
         if (lastPinchDistance > 0 && currentPinchDistance > 0) {
           distance *= lastPinchDistance / currentPinchDistance;
-          distance = clamp(distance, 5, 12);
+          distance = clamp(distance, 5.5, 12);
         }
         lastPinchDistance = currentPinchDistance;
       }
