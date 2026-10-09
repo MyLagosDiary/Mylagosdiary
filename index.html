@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+  />
+  <title>MyLagosDiary — Dollhouse Test</title>
+
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #111;
+      touch-action: none;
+      font-family: Arial, sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    canvas {
+      display: block;
+      touch-action: none;
+    }
+
+    #loading {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.72);
+      color: white;
+      font-size: 18px;
+      font-weight: 700;
+      z-index: 100;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .hud {
+      position: fixed;
+      left: 0;
+      right: 0;
+      top: max(12px, env(safe-area-inset-top));
+      padding: 0 12px;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+      color: white;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+      z-index: 20;
+    }
+
+    .panel {
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 18px;
+      padding: 10px 12px;
+      backdrop-filter: blur(8px);
+      font-size: 14px;
+      line-height: 1.45;
+      min-width: 115px;
+    }
+
+    .hint {
+      position: fixed;
+      top: max(92px, calc(env(safe-area-inset-top) + 84px));
+      left: 50%;
+      transform: translateX(-50%);
+      color: white;
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 12px;
+      z-index: 20;
+      pointer-events: none;
+      white-space: nowrap;
+      backdrop-filter: blur(6px);
+    }
+
+    .actions {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: max(18px, env(safe-area-inset-bottom));
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      z-index: 30;
+      padding: 0 12px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 13px 16px;
+      font-size: 15px;
+      font-weight: 800;
+      color: white;
+      background: #2e7d32;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+      min-width: 96px;
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    #toast {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: max(96px, calc(env(safe-area-inset-bottom) + 88px));
+      background: rgba(0, 0, 0, 0.75);
+      color: white;
+      padding: 10px 14px;
+      border-radius: 999px;
+      display: none;
+      z-index: 50;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <div id="loading">Loading Dollhouse Test...</div>
+
+  <div class="hud">
+    <div class="panel">
+      <div><b>MyLagosDiary</b></div>
+      <div>Energy: <span id="energy">100</span></div>
+      <div>Hunger: <span id="hunger">100</span></div>
+    </div>
+
+    <div class="panel">
+      <div><b>₦<span id="money">1,000</span></b></div>
+      <div>Time: <span id="clock">08:00</span></div>
+    </div>
+  </div>
+
+  <div class="hint" id="hint">
+    Tap floor to move • Drag to rotate • Pinch to zoom
+  </div>
+
+  <div class="actions">
+    <button id="hustleBtn">Hustle ₦40</button>
+    <button id="eatBtn">Eat ₦350</button>
+    <button id="restBtn">Rest</button>
+  </div>
+
+  <div id="toast"></div>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+    const state = {
+      money: 1000,
+      energy: 100,
+      hunger: 100,
+      minutes: 8 * 60
+    };
+
+    const energyEl = document.getElementById("energy");
+    const hungerEl = document.getElementById("hunger");
+    const moneyEl = document.getElementById("money");
+    const clockEl = document.getElementById("clock");
+    const toastEl = document.getElementById("toast");
+    const loadingEl = document.getElementById("loading");
+    const hintEl = document.getElementById("hint");
+
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+    function updateHUD() {
+      state.energy = clamp(state.energy, 0, 100);
+      state.hunger = clamp(state.hunger, 0, 100);
+
+      energyEl.textContent = Math.round(state.energy);
+      hungerEl.textContent = Math.round(state.hunger);
+      moneyEl.textContent = state.money.toLocaleString();
+
+      const hours24 = Math.floor(state.minutes / 60) % 24;
+      const mins = Math.floor(state.minutes % 60);
+      const pad = (n) => String(n).padStart(2, "0");
+
+      clockEl.textContent = `${pad(hours24)}:${pad(mins)}`;
+    }
+
+    function addMinutes(minutes) {
+      state.minutes = (state.minutes + minutes) % (24 * 60);
+      updateHUD();
+    }
+
+    function showToast(message) {
+      toastEl.textContent = message;
+      toastEl.style.display = "block";
+
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => {
+        toastEl.style.display = "none";
+      }, 1800);
+    }
+
+    function hideLoading() {
+      loadingEl.style.display = "none";
+    }
+
+    setTimeout(() => {
+      hintEl.style.display = "none";
+    }, 7000);
+
+    document.getElementById("hustleBtn").addEventListener("click", () => {
+      if (state.energy < 10) {
+        showToast("You no get energy");
+        return;
+      }
+
+      if (state.hunger < 10) {
+        showToast("You too hungry to hustle");
+        return;
+      }
+
+      state.money += 40;
+      state.energy -= 10;
+      state.hunger -= 5;
+      addMinutes(10);
+
+      updateHUD();
+      showToast("+₦40 from hustle");
+    });
+
+    document.getElementById("eatBtn").addEventListener("click", () => {
+      if (state.money < 350) {
+        showToast("No money for buka");
+        return;
+      }
+
+      if (state.hunger >= 100) {
+        showToast("You don full");
+        return;
+      }
+
+      state.money -= 350;
+      state.hunger += 35;
+      addMinutes(5);
+
+      updateHUD();
+      showToast("You chop small");
+    });
+
+    document.getElementById("restBtn").addEventListener("click", () => {
+      if (state.energy >= 100) {
+        showToast("Energy don full");
+        return;
+      }
+
+      state.energy += 25;
+      state.hunger -= 8;
+      addMinutes(60);
+
+      updateHUD();
+      showToast("You rest small");
+    });
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color("#bfe9ff");
+    scene.fog = new THREE.Fog("#bfe9ff", 25, 65);
+
+    const camera = new THREE.PerspectiveCamera(
+      50,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      100
+    );
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    document.body.appendChild(renderer.domElement);
+
+    const hemi = new THREE.HemisphereLight("#ffffff", "#d8c9a3", 1.15);
+    scene.add(hemi);
+
+    const sun = new THREE.DirectionalLight("#fff1d0", 2.4);
+    sun.position.set(6, 10, 4);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.left = -14;
+    sun.shadow.camera.right = 14;
+    sun.shadow.camera.top = 14;
+    sun.shadow.camera.bottom = -14;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 40;
+    scene.add(sun);
+
+    const tapMeshes = [];
+
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(80, 80),
+      new THREE.MeshStandardMaterial({
+        color: "#88b06a",
+        roughness: 0.95
+      })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+    tapMeshes.push(ground);
+
+    const roomFloor = new THREE.Mesh(
+      new THREE.PlaneGeometry(10, 10),
+      new THREE.MeshStandardMaterial({
+        color: "#d7b083",
+        roughness: 0.9
+      })
+    );
+    roomFloor.rotation.x = -Math.PI / 2;
+    roomFloor.position.y = 0.01;
+    roomFloor.receiveShadow = true;
+    scene.add(roomFloor);
+    tapMeshes.push(roomFloor);
+
+    const rug = new THREE.Mesh(
+      new THREE.CircleGeometry(2.2, 32),
+      new THREE.MeshStandardMaterial({
+        color: "#d96f4e",
+        roughness: 0.95
+      })
+    );
+    rug.rotation.x = -Math.PI / 2;
+    rug.position.y = 0.02;
+    rug.receiveShadow = true;
+    scene.add(rug);
+
+    function makeWall(x, z, rotationY) {
+      const wall = new THREE.Mesh(
+        new THREE.PlaneGeometry(10, 3),
+        new THREE.MeshStandardMaterial({
+          color: "#f6efe3",
+          roughness: 0.95,
+          side: THREE.FrontSide
+        })
+      );
+      wall.position.set(x, 1.5, z);
+      wall.rotation.y = rotationY;
+      wall.receiveShadow = true;
+      scene.add(wall);
+    }
+
+    makeWall(0, -5, 0);
+    makeWall(0, 5, Math.PI);
+    makeWall(-5, 0, Math.PI / 2);
+    makeWall(5, 0, -Math.PI / 2);
+
+    function makeBox(w, h, d, color, x, y, z) {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(w, h, d),
+        new THREE.MeshStandardMaterial({
+          color,
+          roughness: 0.82,
+          metalness: 0.04
+        })
+      );
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      return mesh;
+    }
+
+    function makeCylinder(radiusTop, radiusBottom, height, color, x, y, z) {
+      const mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(radiusTop, radiusBottom, height, 24),
+        new THREE.MeshStandardMaterial({
+          color,
+          roughness: 0.82,
+          metalness: 0.04
+        })
+      );
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      return mesh;
+    }
+
+    makeBox(2.1, 0.32, 3.3, "#8a5a3b", -3.1, 0.16, -2.6);
+    makeBox(1.9, 0.22, 3.1, "#f3f3f3", -3.1, 0.43, -2.6);
+    makeBox(1.5, 0.16, 0.7, "#d9e8ff", -3.1, 0.58, -3.8);
+
+    makeCylinder(0.75, 0.75, 0.08, "#8a5a3b", 1.8, 0.75, -1.8);
+    makeCylinder(0.08, 0.08, 0.72, "#6d4429", 1.8, 0.36, -1.8);
+
+    makeCylinder(0.24, 0.24, 0.03, "#ffffff", 1.8, 0.81, -1.8);
+    makeCylinder(0.13, 0.13, 0.05, "#e07a2f", 1.8, 0.84, -1.8);
+
+    makeBox(0.55, 0.07, 0.55, "#7c4f2a", 1.8, 0.45, -0.7);
+    makeBox(0.55, 0.65, 0.07, "#7c4f2a", 1.8, 0.82, -0.45);
+
+    makeCylinder(0.04, 0.04, 1.6, "#444444", -4.2, 0.8, -4.2);
+
+    const lampShade = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.32, 0.35, 24),
+      new THREE.MeshStandardMaterial({
+        color: "#ffd166",
+        emissive: "#ffb703",
+        emissiveIntensity: 0.35,
+        roughness: 0.6
+      })
+    );
+    lampShade.position.set(-4.2, 1.65, -4.2);
+    lampShade.castShadow = true;
+    scene.add(lampShade);
+
+    const marker = new THREE.Mesh(
+      new THREE.RingGeometry(0.24, 0.34, 32),
+      new THREE.MeshBasicMaterial({
+        color: "#ffffff",
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false
+      })
+    );
+    marker.rotation.x = -Math.PI / 2;
+    marker.visible = false;
+    scene.add(marker);
+
+    const player = new THREE.Group();
+    player.position.set(0, 0, 1.5);
+    scene.add(player);
+
+    let mixer = null;
+    let actions = {};
+    let activeAction = null;
+    let isMoving = false;
+    let target = null;
+
+    function playAction(name) {
+      const next = actions[name];
+      if (!next) return;
+      if (activeAction === next) return;
+
+      next.reset();
+      next.setEffectiveTimeScale(1);
+      next.setEffectiveWeight(1);
+      next.fadeIn(0.25);
+      next.play();
+
+      if (activeAction) {
+        activeAction.fadeOut(0.25);
+      }
+
+      activeAction = next;
+    }
+
+    function createPlaceholderCharacter() {
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: "#8d6e63",
+        roughness: 0.75
+      });
+
+      const body = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.35, 0.9, 8, 16),
+        bodyMat
+      );
+      body.position.y = 0.95;
+      body.castShadow = true;
+
+      const head = new THREE.Mesh(
+        new THREE.SphereGeometry(0.28, 24, 24),
+        new THREE.MeshStandardMaterial({
+          color: "#a9825f",
+          roughness: 0.7
+        })
+      );
+      head.position.y = 1.78;
+      head.castShadow = true;
+
+      player.add(body, head);
+      hideLoading();
+    }
+
+    const loader = new GLTFLoader();
+    const modelUrl = "https://threejs.org/examples/models/gltf/Xbot.glb";
+
+    loader.load(
+      modelUrl,
+      (gltf) => {
+        const model = gltf.scene;
+
+        model.scale.setScalar(1.02);
+
+        model.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+
+        player.add(model);
+
+        mixer = new THREE.AnimationMixer(model);
+
+        const clips = gltf.animations || [];
+
+        function findClip(names) {
+          for (const name of names) {
+            const clip = clips.find((c) =>
+              c.name.toLowerCase().includes(name)
+            );
+            if (clip) return clip;
+          }
+          return null;
+        }
+
+        const idleClip =
+          findClip(["idle", "stand", "breath"]) || clips[0] || null;
+
+        const walkClip =
+          findClip(["walk", "walking", "run"]) || clips[1] || idleClip;
+
+        if (idleClip) actions.idle = mixer.clipAction(idleClip);
+        if (walkClip) actions.walk = mixer.clipAction(walkClip);
+
+        playAction(actions.idle ? "idle" : "walk");
+
+        hideLoading();
+      },
+      undefined,
+      (error) => {
+        console.error("Model load error:", error);
+        createPlaceholderCharacter();
+        showToast("Character model failed. Using placeholder.");
+      }
+    );
+
+    const raycaster = new THREE.Raycaster();
+    const pointerNdc = new THREE.Vector2();
+
+    const activePointers = new Map();
+    let startX = 0;
+    let startY = 0;
+    let moved = false;
+    let pinching = false;
+    let lastPinchDistance = 0;
+
+    let yaw = 0.65;
+    let pitch = 0.98;
+    let distance = 6.4;
+
+    function getPinchDistance() {
+      const points = [...activePointers.values()];
+      if (points.length < 2) return 0;
+
+      const dx = points[0].x - points[1].x;
+      const dy = points[0].y - points[1].y;
+
+      return Math.hypot(dx, dy);
+    }
+
+    function handleTap(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+
+      pointerNdc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNdc.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(pointerNdc, camera);
+
+      const hits = raycaster.intersectObjects(tapMeshes, false);
+
+      if (hits.length > 0) {
+        const point = hits[0].point;
+
+        target = new THREE.Vector3(point.x, 0, point.z);
+
+        marker.position.set(point.x, point.y + 0.03, point.z);
+        marker.visible = true;
+      }
+    }
+
+    renderer.domElement.addEventListener("pointerdown", (event) => {
+      activePointers.set(event.pointerId, {
+        x: event.clientX,
+        y: event.clientY
+      });
+
+      if (activePointers.size === 1) {
+        startX = event.clientX;
+        startY = event.clientY;
+        moved = false;
+        pinching = false;
+      } else if (activePointers.size === 2) {
+        pinching = true;
+        moved = true;
+        lastPinchDistance = getPinchDistance();
+      }
+    });
+
+    window.addEventListener("pointermove", (event) => {
+      if (!activePointers.has(event.pointerId)) return;
+
+      const prev = activePointers.get(event.pointerId);
+      const dx = event.clientX - prev.x;
+      const dy = event.clientY - prev.y;
+
+      activePointers.set(event.pointerId, {
+        x: event.clientX,
+        y: event.clientY
+      });
+
+      if (activePointers.size === 1 && !pinching) {
+        if (
+          Math.abs(event.clientX - startX) > 8 ||
+          Math.abs(event.clientY - startY) > 8
+        ) {
+          moved = true;
+        }
+
+        if (moved) {
+          yaw -= dx * 0.006;
+          pitch = clamp(pitch + dy * 0.004, 0.55, 1.25);
+        }
+      } else if (activePointers.size === 2) {
+        moved = true;
+
+        const currentPinchDistance = getPinchDistance();
+
+        if (lastPinchDistance > 0 && currentPinchDistance > 0) {
+          distance *= lastPinchDistance / currentPinchDistance;
+          distance = clamp(distance, 3.5, 10);
+        }
+
+        lastPinchDistance = currentPinchDistance;
+      }
+    });
+
+    function endPointer(event) {
+      if (!activePointers.has(event.pointerId)) return;
+
+      if (activePointers.size === 1 && !moved && !pinching) {
+        handleTap(event);
+      }
+
+      activePointers.delete(event.pointerId);
+
+      if (activePointers.size < 2) {
+        lastPinchDistance = 0;
+
+        if (activePointers.size === 0) {
+          pinching = false;
+        }
+      }
+    }
+
+    window.addEventListener("pointerup", endPointer);
+    window.addEventListener("pointercancel", endPointer);
+
+    function lerpAngle(a, b, t) {
+      let diff = (b - a) % (Math.PI * 2);
+
+      if (diff > Math.PI) diff -= Math.PI * 2;
+      if (diff < -Math.PI) diff += Math.PI * 2;
+
+      return a + diff * clamp(t, 0, 1);
+    }
+
+    function handleMovement(delta) {
+      if (!target) return;
+
+      const direction = target.clone().sub(player.position);
+      direction.y = 0;
+
+      const dist = direction.length();
+
+      if (dist > 0.12) {
+        direction.normalize();
+
+        const speed = 1.8;
+        const step = Math.min(speed * delta, dist);
+
+        player.position.addScaledVector(direction, step);
+
+        const targetYaw = Math.atan2(direction.x, direction.z);
+        player.rotation.y = lerpAngle(player.rotation.y, targetYaw, 12 * delta);
+
+        if (!isMoving) {
+          isMoving = true;
+          playAction("walk");
+        }
+      } else {
+        target = null;
+        marker.visible = false;
+
+        if (isMoving) {
+          isMoving = false;
+          playAction("idle");
+        }
+      }
+    }
+
+    function updateCamera() {
+      const cosPitch = Math.cos(pitch);
+
+      camera.position.set(
+        player.position.x + Math.sin(yaw) * distance * cosPitch,
+        player.position.y + Math.sin(pitch) * distance,
+        player.position.z + Math.cos(yaw) * distance * cosPitch
+      );
+
+      camera.lookAt(
+        player.position.x,
+        player.position.y + 1.1,
+        player.position.z
+      );
+    }
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const delta = Math.min(clock.getDelta(), 0.05);
+
+      if (mixer) {
+        mixer.update(delta);
+      }
+
+      handleMovement(delta);
+      updateCamera();
+
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    updateHUD();
+    updateCamera();
+    animate();
+  </script>
+</body>
+</html>
