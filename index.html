@@ -912,33 +912,20 @@
         const model = gltf.scene;
         player.add(model);
 
-        model.updateWorldMatrix(true, true);
-        const box = new THREE.Box3().setFromObject(model);
-        const size = new THREE.Vector3();
-        box.getSize(size);
-
-        let heightInfo = "H:?";
-        if (size.y > 0.001) {
-          const s = 1.7 / size.y;
-          model.scale.setScalar(s);
-          heightInfo = "H:" + size.y.toFixed(1) + "→1.7";
-        }
-
-        model.updateWorldMatrix(true, true);
-        const box2 = new THREE.Box3().setFromObject(model);
-        model.position.y -= box2.min.y;
+        const boneList = [];
 
         model.traverse((child) => {
           if (child.isMesh) {
             child.castShadow = true;
             child.receiveShadow = true;
           }
+          if (child.isBone) {
+            boneList.push(child);
+          }
         });
 
         mixer = new THREE.AnimationMixer(model);
         const clips = gltf.animations || [];
-
-        dbgEl.textContent = "MODEL OK • " + heightInfo + " • ANIMS: " + clips.map((c) => c.name).join(", ");
 
         function findClip(names) {
           for (const name of names) {
@@ -973,6 +960,54 @@
         });
 
         playAction("idle");
+        mixer.update(0.0001);
+
+        let info = "BONES:" + boneList.length;
+
+        try {
+          if (boneList.length > 0) {
+            model.updateWorldMatrix(true, true);
+
+            const v = new THREE.Vector3();
+            const box = new THREE.Box3();
+            for (const b of boneList) {
+              b.getWorldPosition(v);
+              box.expandByPoint(v);
+            }
+
+            const span = box.max.y - box.min.y;
+
+            if (isFinite(span) && span > 0.001) {
+              const s = 1.55 / span;
+
+              if (isFinite(s) && s > 0.0001 && s < 10000) {
+                model.scale.setScalar(s);
+                info += " span:" + span.toFixed(1) + "→1.55";
+              }
+
+              model.updateWorldMatrix(true, true);
+
+              const box2 = new THREE.Box3();
+              for (const b of boneList) {
+                b.getWorldPosition(v);
+                box2.expandByPoint(v);
+              }
+
+              if (isFinite(box2.min.y)) {
+                model.position.y -= box2.min.y;
+              }
+            }
+          }
+        } catch (e) {
+          info += " size-skip";
+        }
+
+        if (!isFinite(model.scale.x) || model.scale.x <= 0) {
+          model.scale.setScalar(1);
+        }
+
+        dbgEl.textContent = "MODEL OK • " + info + " • ANIMS: " + clips.map((c) => c.name).join(", ");
+
         hideLoading();
       },
       undefined,
