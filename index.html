@@ -291,7 +291,7 @@
   </div>
 
   <div class="hint" id="hint">
-    Tap objects for actions • Tap floor to move • Drag rotate • Pinch zoom
+    Tap objects for actions • Tap floor to move • Drag rotate • Pinch zoom • Tap green box = animation inspector
   </div>
 
   <div id="dbg">BOOTING...</div>
@@ -314,6 +314,8 @@
   <script type="module">
     import * as THREE from "three";
     import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+    const BUILD_TAG = "B17";
 
     const state = {
       money: 1000,
@@ -405,7 +407,7 @@
 
     setTimeout(() => {
       hintEl.style.display = "none";
-    }, 7000);
+    }, 9000);
 
     let sleeping = false;
 
@@ -414,6 +416,9 @@
     let charSource = "none";
     let animNamesGlobal = "";
     let boneListGlobal = [];
+    let clipsGlobal = [];
+    let inspectIndex = -1;
+    let dbgOverride = null;
 
     function measureBoneSpan() {
       if (!charModel || boneListGlobal.length === 0) return null;
@@ -428,15 +433,16 @@
     }
 
     function updateDbg() {
+      if (dbgOverride) {
+        dbgEl.textContent = dbgOverride;
+        return;
+      }
       const meas = measureBoneSpan();
-      let txt = "SRC:" + charSource + " SCALE:" + charScale.toFixed(3);
+      let txt = BUILD_TAG + " SRC:" + charSource + " SCALE:" + charScale.toFixed(3);
       if (meas && isFinite(meas.span)) {
         txt += " • H:" + (meas.span + 0.15).toFixed(2);
       }
       txt += " • bones:" + boneListGlobal.length;
-      if (animNamesGlobal) {
-        txt += " • ANIMS:" + animNamesGlobal;
-      }
       dbgEl.textContent = txt;
     }
 
@@ -454,6 +460,32 @@
 
       updateDbg();
     }
+
+    dbgEl.addEventListener("click", () => {
+      if (!mixer || clipsGlobal.length === 0) return;
+
+      inspectIndex = (inspectIndex + 1) % (clipsGlobal.length + 1);
+
+      if (inspectIndex === clipsGlobal.length) {
+        dbgOverride = null;
+        playAction("idle");
+        updateDbg();
+        return;
+      }
+
+      const clip = clipsGlobal[inspectIndex];
+      const a = mixer.clipAction(clip);
+      a.reset();
+      a.setLoop(THREE.LoopRepeat, Infinity);
+      a.setEffectiveWeight(1);
+      a.fadeIn(0.2);
+      a.play();
+      if (activeAction) activeAction.fadeOut(0.2);
+      activeAction = a;
+
+      dbgOverride = BUILD_TAG + " PLAYING[" + inspectIndex + "/" + clipsGlobal.length + "]: " + clip.name;
+      dbgEl.textContent = dbgOverride;
+    });
 
     document.getElementById("diaryBtn").addEventListener("click", () => {
       if (sleeping) return;
@@ -1135,6 +1167,27 @@
     const HERO_URL = "assets/models/hero.glb";
     const FALLBACK_URL = "https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb";
 
+    function recolorUntextured(model) {
+      model.traverse((child) => {
+        if (!child.isMesh) return;
+
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        const newMats = mats.map((mat) => {
+          if (!mat) return mat;
+          const nm = mat.clone();
+          nm.map = null;
+          nm.vertexColors = false;
+          nm.color.set("#a9764f");
+          nm.roughness = 0.85;
+          nm.metalness = 0.0;
+          nm.needsUpdate = true;
+          return nm;
+        });
+
+        child.material = Array.isArray(child.material) ? newMats : newMats[0];
+      });
+    }
+
     function onModelLoaded(gltf, source) {
       const model = gltf.scene;
       player.add(model);
@@ -1145,22 +1198,18 @@
         if (child.isMesh) {
           child.castShadow = true;
           child.receiveShadow = true;
-
-          const mat = child.material;
-          if (mat && !mat.map) {
-            child.material = mat.clone();
-            child.material.color.set("#a9764f");
-            child.material.roughness = 0.85;
-          }
         }
         if (child.isBone) {
           boneList.push(child);
         }
       });
 
+      recolorUntextured(model);
+
       mixer = new THREE.AnimationMixer(model);
       const clips = gltf.animations || [];
 
+      clipsGlobal = clips;
       animNamesGlobal = clips.map((c) => c.name).join(", ");
 
       function findClip(names) {
@@ -1173,7 +1222,7 @@
 
       const idleClip = findClip(["idle"]) || clips[0] || null;
       const walkClip = findClip(["walk"]) || findClip(["run"]) || clips[1] || idleClip;
-      const sitClip = findClip(["sit"]) || findClip(["armatureaction"]) || null;
+      const sitClip = findClip(["sit"]) || null;
       const standClip = findClip(["standing", "stand up", "stand"]) || null;
       const thumbsClip = findClip(["thumbs"]) || null;
       const danceClip = findClip(["dance"]) || null;
