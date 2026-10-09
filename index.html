@@ -88,13 +88,14 @@
       left: 50%;
       transform: translateX(-50%);
       color: white;
-      background: rgba(0, 0, 0, 0.35);
-      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.45);
+      border-radius: 16px;
       padding: 8px 12px;
-      font-size: 12px;
+      font-size: 11px;
       z-index: 20;
       pointer-events: none;
-      white-space: nowrap;
+      max-width: 86%;
+      text-align: center;
       backdrop-filter: blur(6px);
     }
 
@@ -105,26 +106,29 @@
       bottom: max(18px, env(safe-area-inset-bottom));
       display: flex;
       justify-content: center;
-      gap: 10px;
+      gap: 8px;
       z-index: 30;
-      padding: 0 12px;
+      padding: 0 10px;
       flex-wrap: wrap;
     }
 
     button {
       border: 0;
       border-radius: 999px;
-      padding: 13px 16px;
-      font-size: 15px;
+      padding: 12px 14px;
+      font-size: 14px;
       font-weight: 800;
       color: white;
       background: #2e7d32;
       box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
-      min-width: 96px;
     }
 
     button:active {
       transform: scale(0.98);
+    }
+
+    button.grey {
+      background: #6d5a3f;
     }
 
     #toast {
@@ -140,6 +144,44 @@
       z-index: 50;
       white-space: nowrap;
       font-weight: 700;
+    }
+
+    #diaryPanel {
+      position: fixed;
+      inset: 8% 7%;
+      background: rgba(255, 248, 235, 0.97);
+      color: #3a3226;
+      border-radius: 18px;
+      padding: 16px;
+      overflow: auto;
+      z-index: 80;
+      display: none;
+      font-family: Georgia, serif;
+      font-size: 14px;
+      line-height: 1.55;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    }
+
+    #diaryPanel h2 {
+      margin: 0 0 10px;
+      font-size: 18px;
+      font-style: italic;
+    }
+
+    .entry {
+      margin-bottom: 12px;
+      border-bottom: 1px dashed #b9a98c;
+      padding-bottom: 10px;
+      white-space: pre-wrap;
+    }
+
+    #diaryClose {
+      position: sticky;
+      top: 0;
+      float: right;
+      background: #6d5a3f;
+      padding: 8px 12px;
+      font-size: 12px;
     }
   </style>
 
@@ -178,9 +220,16 @@
     <button id="hustleBtn">Hustle ₦40</button>
     <button id="eatBtn">Eat ₦350</button>
     <button id="restBtn">Rest</button>
+    <button id="diaryBtn" class="grey">Diary</button>
   </div>
 
   <div id="toast"></div>
+
+  <div id="diaryPanel">
+    <button id="diaryClose">Close</button>
+    <h2>My Lagos Diary</h2>
+    <div id="diaryContent"></div>
+  </div>
 
   <script type="module">
     import * as THREE from "three";
@@ -191,7 +240,9 @@
       energy: 100,
       hunger: 100,
       minutes: 8 * 60,
-      day: 1
+      day: 1,
+      diary: [],
+      todayEvents: ["Started the day with ₦1,000 for pocket."]
     };
 
     const energyEl = document.getElementById("energy");
@@ -203,8 +254,21 @@
     const loadingEl = document.getElementById("loading");
     const hintEl = document.getElementById("hint");
     const fadeEl = document.getElementById("fade");
+    const diaryPanel = document.getElementById("diaryPanel");
+    const diaryContent = document.getElementById("diaryContent");
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+    function clockString() {
+      const hours24 = Math.floor(state.minutes / 60) % 24;
+      const mins = Math.floor(state.minutes % 60);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${pad(hours24)}:${pad(mins)}`;
+    }
+
+    function logEvent(text) {
+      state.todayEvents.push(clockString() + " — " + text);
+    }
 
     function updateHUD() {
       state.energy = clamp(state.energy, 0, 100);
@@ -214,12 +278,9 @@
       hungerEl.textContent = Math.round(state.hunger);
       moneyEl.textContent = state.money.toLocaleString();
       dayEl.textContent = state.day;
+      clockEl.textContent = clockString();
 
-      const hours24 = Math.floor(state.minutes / 60) % 24;
-      const mins = Math.floor(state.minutes % 60);
-      const pad = (n) => String(n).padStart(2, "0");
-
-      clockEl.textContent = `${pad(hours24)}:${pad(mins)}`;
+      updateDayNight();
     }
 
     function addMinutes(minutes) {
@@ -241,6 +302,16 @@
       loadingEl.style.display = "none";
     }
 
+    let hintTimer = null;
+    function showHint(text, seconds) {
+      hintEl.textContent = text;
+      hintEl.style.display = "block";
+      clearTimeout(hintTimer);
+      hintTimer = setTimeout(() => {
+        hintEl.style.display = "none";
+      }, seconds * 1000);
+    }
+
     setTimeout(() => {
       hintEl.style.display = "none";
     }, 7000);
@@ -256,6 +327,7 @@
       state.energy -= 10;
       state.hunger -= 5;
       addMinutes(10);
+      logEvent("Hustled hard and earned ₦40.");
       updateHUD();
       showToast("+₦40 from hustle");
     });
@@ -268,6 +340,7 @@
       state.money -= 350;
       state.hunger += 35;
       addMinutes(5);
+      logEvent("Chop buka food for ₦350.");
       updateHUD();
       showToast("You chop small");
     });
@@ -279,9 +352,49 @@
       state.energy += 25;
       state.hunger -= 8;
       addMinutes(60);
+      logEvent("Rested small to catch breath.");
       updateHUD();
       showToast("You rest small");
     });
+
+    document.getElementById("diaryBtn").addEventListener("click", () => {
+      if (sleeping) return;
+      renderDiary();
+      diaryPanel.style.display = "block";
+    });
+
+    document.getElementById("diaryClose").addEventListener("click", () => {
+      diaryPanel.style.display = "none";
+    });
+
+    function renderDiary() {
+      const closing = "";
+      let html = "";
+
+      html += `<div class="entry"><b>Today (Day ${state.day})</b><br>${state.todayEvents.join("<br>")}</div>`;
+
+      const past = [...state.diary].reverse();
+      for (const entry of past) {
+        html += `<div class="entry">${entry}</div>`;
+      }
+
+      diaryContent.innerHTML = html || closing;
+    }
+
+    const closings = [
+      "VI still dey shine across the water. One day.",
+      "Body tire, but spirit no dey shake.",
+      "Small small, we dey go.",
+      "Lagos no dey carry last, and I no go carry last either.",
+      "Tomorrow na another hustle."
+    ];
+
+    function writeDayEntry(finishedDay) {
+      const closing = closings[finishedDay % closings.length];
+      const entry = `Day ${finishedDay} — ${state.todayEvents.join(" ")} ${closing}`;
+      state.diary.push(entry);
+      state.todayEvents = ["Woke up fresh for morning."];
+    }
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#bfe9ff");
@@ -311,9 +424,33 @@
     sun.shadow.camera.near = 1; sun.shadow.camera.far = 40;
     scene.add(sun);
 
+    const dayColor = new THREE.Color("#bfe9ff");
+    const nightColor = new THREE.Color("#0b1026");
+
+    function updateDayNight() {
+      const h = state.minutes / 60;
+      let light;
+
+      if (h >= 7 && h < 17) light = 1;
+      else if (h >= 17 && h < 20) light = 1 - (h - 17) / 3;
+      else if (h >= 5 && h < 7) light = (h - 5) / 2;
+      else light = 0;
+
+      scene.background.copy(nightColor).lerp(dayColor, light);
+      scene.fog.color.copy(scene.background);
+
+      hemi.intensity = 0.25 + 0.95 * light;
+      sun.intensity = 0.25 + 2.15 * light;
+
+      if (lampShade) {
+        lampShade.material.emissiveIntensity = 0.35 + 1.4 * (1 - light);
+      }
+    }
+
     const tapMeshes = [];
     const interactiveObjects = [];
     let foodMesh = null;
+    let lampShade = null;
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(80, 80),
@@ -398,7 +535,7 @@
     m = makeBox(0.55, 0.65, 0.07, "#7c4f2a", 1.8, 0.82, -0.45); m.userData.type = "chair"; interactiveObjects.push(m);
 
     makeCylinder(0.04, 0.04, 1.6, "#444444", -4.2, 0.8, -4.2);
-    const lampShade = new THREE.Mesh(
+    lampShade = new THREE.Mesh(
       new THREE.CylinderGeometry(0.22, 0.32, 0.35, 24),
       new THREE.MeshStandardMaterial({ color: "#ffd166", emissive: "#ffb703", emissiveIntensity: 0.35, roughness: 0.6 })
     );
@@ -500,11 +637,13 @@
 
     function startSleep() {
       sleeping = true;
+      logEvent("Lie down for bed make sleep carry me.");
 
       setTimeout(() => {
         fadeEl.classList.add("on");
 
         setTimeout(() => {
+          writeDayEntry(state.day);
           state.day += 1;
           state.minutes = 8 * 60;
           state.energy = 100;
@@ -554,7 +693,10 @@
           toRot: { x: 0, y: Math.PI, z: 0 },
           dur: 0.55,
           blend: actions.sit ? "sit" : "idle",
-          onDone: () => showToast("You sit down small.")
+          onDone: () => {
+            logEvent("Sat down small to rest mind.");
+            showToast("You sit down small.");
+          }
         });
       } else if (type === "table") {
         const dirToTable = spots.tableCenter.clone().sub(player.position);
@@ -574,6 +716,7 @@
             state.money -= 350;
             state.hunger = clamp(state.hunger + 50, 0, 100);
             addMinutes(20);
+            logEvent("Chop home food from table.");
 
             foodMesh.visible = false;
             playOneShot("thumbs");
@@ -616,6 +759,8 @@
 
         mixer = new THREE.AnimationMixer(model);
         const clips = gltf.animations || [];
+
+        showHint("ANIMS: " + clips.map((c) => c.name).join(", "), 14);
 
         function findClip(names) {
           for (const name of names) {
